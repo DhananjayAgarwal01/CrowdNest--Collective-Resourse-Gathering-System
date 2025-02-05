@@ -5,7 +5,7 @@ from mysql.connector import Error
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': '12345678',
+    'password': 'Dhananjay@007', # Change this to the root password for your device
     'database': 'donateshare'
 }
 

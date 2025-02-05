@@ -108,7 +108,7 @@ CITIES_BY_STATE = {
     "Uttar Pradesh": ["Lucknow", "Kanpur", "Varanasi", "Agra", "Meerut", "Prayagraj"],
     "West Bengal": ["Kolkata", "Howrah", "Durgapur", "Asansol", "Siliguri", "Bardhaman"]
 }
-
+    
 class NavigationPane:
     def __init__(self, parent, show_frame_callback):
         self.frame = ttk.Frame(parent, style='Navigation.TFrame')
@@ -176,6 +176,36 @@ class NavigationPane:
         self.frame.pack_forget()
 
 class ModernUI:
+    @staticmethod
+    def create_scrollable_frame(parent):
+        # Create a canvas with scrollbars
+        canvas = tk.Canvas(parent, bg=COLORS['card'], highlightthickness=0)
+        scrollbar_y = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollbar_x = ttk.Scrollbar(parent, orient="horizontal", command=canvas.xview)
+        
+        # Create a frame inside the canvas
+        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        # Configure the canvas
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+        
+        # Pack the scrollbars and canvas
+        scrollbar_y.pack(side="right", fill="y")
+        scrollbar_x.pack(side="bottom", fill="x")
+        canvas.pack(side="left", fill="both", expand=True)
+        
+        return scrollable_frame, canvas
+
+    def _on_mousewheel(self, event, canvas):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # In the create_scrollable_frame method:
+        canvas.bind_all("<MouseWheel>", lambda e: self._on_mousewheel(e, canvas))
+
     @staticmethod
     def create_header(parent):
         header = ttk.Frame(parent, style='Header.TFrame')
@@ -367,6 +397,10 @@ class DonateShareApp:
         self.state_var = tk.StringVar()
         self.city_var = tk.StringVar()
         
+        # Initialize profile data
+        self.profile_labels = {}
+        self.profile_entries = {}
+        
         # Configure custom styles
         CustomStyle.configure_styles()
         
@@ -424,6 +458,29 @@ class DonateShareApp:
                              style='Secondary.TButton', width=40).pack()
         
         self.frames['login'] = frame
+    def check_password_strength(self, event=None):
+        password = self.register_entries['Password:'].get()
+        strength = 0
+
+        # Criteria for password strength
+        if len(password) >= 8:
+            strength += 1
+        if any(char.isdigit() for char in password):
+            strength += 1
+        if any(char.isupper() for char in password):
+            strength += 1
+        if any(char.islower() for char in password):
+            strength += 1
+        if any(char in "!@#$%^&*()-_=+[]{}|;:,.<>?/" for char in password):
+            strength += 1
+
+        # Update the password strength label
+        if strength == 0:
+            self.password_strength_label.config(text="Weak", foreground=COLORS['error'])
+        elif strength <= 2:
+            self.password_strength_label.config(text="Moderate", foreground=COLORS['warning'])
+        else:
+            self.password_strength_label.config(text="Strong", foreground=COLORS['success'])
 
     def create_register_frame(self):
         frame = ModernUI.create_card(self.content_frame)
@@ -431,61 +488,117 @@ class DonateShareApp:
         # Center content
         content = ttk.Frame(frame, style='Card.TFrame')
         content.place(relx=0.5, rely=0.5, anchor='center')
-        
-        ttk.Label(content, text="Create Account", style='Title.TLabel').pack()
-        ttk.Label(content, text="Join our community", style='Subtitle.TLabel').pack(pady=(0, 30))
-        
-        # Registration form
+
+        # Header Section
+        header_frame = ttk.Frame(content, style='Card.TFrame')
+        header_frame.pack(fill='x', pady=(0, 20))
+        ttk.Label(header_frame, text="🎁", font=('Segoe UI', 48), foreground=COLORS['primary']).pack()
+        ttk.Label(header_frame, text="Create Account", style='Title.TLabel').pack()
+        ttk.Label(header_frame, text="Join our community and start sharing!", style='Subtitle.TLabel').pack()
+
+        # Registration Form
         self.register_entries = {}
-        
-        # Username field
-        ttk.Label(content, text="Username", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Username:'] = ModernUI.create_entry(content, width=40)
-        self.register_entries['Username:'].pack(pady=10)
-        
-        # Email field
-        ttk.Label(content, text="Email", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Email:'] = ModernUI.create_entry(content, width=40)
-        self.register_entries['Email:'].pack(pady=10)
-        
-        # Password fields
-        ttk.Label(content, text="Password", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Password:'] = ModernUI.create_entry(content, show="•", width=40)
-        self.register_entries['Password:'].pack(pady=10)
-        
-        ttk.Label(content, text="Confirm Password", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Confirm Password:'] = ModernUI.create_entry(content, show="•", width=40)
-        self.register_entries['Confirm Password:'].pack(pady=10)
-        
-        # Replace the old location dropdown with new location selector
+
+        # Username Field
+        username_frame = ttk.Frame(content, style='Card.TFrame')
+        username_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(username_frame, text="👤 Username", style='Subtitle.TLabel').pack(anchor='w')
+        self.register_entries['Username:'] = ModernUI.create_entry(username_frame, placeholder="Enter your username", width=40)
+        self.register_entries['Username:'].pack(pady=(5, 0))
+
+        # Email Field
+        email_frame = ttk.Frame(content, style='Card.TFrame')
+        email_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(email_frame, text="📧 Email", style='Subtitle.TLabel').pack(anchor='w')
+        self.register_entries['Email:'] = ModernUI.create_entry(email_frame, placeholder="Enter your email", width=40)
+        self.register_entries['Email:'].pack(pady=(5, 0))
+
+        # Password Fields
+        password_frame = ttk.Frame(content, style='Card.TFrame')
+        password_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(password_frame, text="🔒 Password", style='Subtitle.TLabel').pack(anchor='w')
+        self.register_entries['Password:'] = ModernUI.create_entry(password_frame, show="•", placeholder="Enter your password", width=40)
+        self.register_entries['Password:'].pack(pady=(5, 0))
+
+        confirm_password_frame = ttk.Frame(content, style='Card.TFrame')
+        confirm_password_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(confirm_password_frame, text="🔒 Confirm Password", style='Subtitle.TLabel').pack(anchor='w')
+        self.register_entries['Confirm Password:'] = ModernUI.create_entry(confirm_password_frame, show="•", placeholder="Re-enter your password", width=40)
+        self.register_entries['Confirm Password:'].pack(pady=(5, 0))
+
+        # Password Strength Indicator
+        self.password_strength_label = ttk.Label(password_frame, text="", style='Subtitle.TLabel', foreground=COLORS['text_light'])
+        self.password_strength_label.pack(anchor='w', pady=(5, 0))
+        self.register_entries['Password:'].bind('<KeyRelease>', self.check_password_strength)
+
+        # Location Selector
         location_selector = ModernUI.create_location_selector(content, self.state_var, self.city_var)
-        location_selector.pack(pady=10)
-        
+        location_selector.pack(fill='x', pady=(0, 20))
+
         # Store the location variables
         self.register_entries['State:'] = self.state_var
         self.register_entries['City:'] = self.city_var
-        
-        ModernUI.create_button(content, "Create Account", self.register, width=40).pack(pady=20)
-        ModernUI.create_button(content, "Back to Login", 
-                             lambda: self.show_frame('login'), 
-                             style='Secondary.TButton', width=40).pack()
-        
+
+        # Action Buttons
+        button_frame = ttk.Frame(content, style='Card.TFrame')
+        button_frame.pack(fill='x', pady=20)
+        ModernUI.create_button(button_frame, "Create Account", self.register, width=20).pack(side='left', padx=5)
+        ModernUI.create_button(button_frame, "Back to Login", lambda: self.show_frame('login'), style='Secondary.TButton', width=20).pack(side='right', padx=5)
+
         self.frames['register'] = frame
 
     def create_dashboard_frame(self):
         frame = ModernUI.create_card(self.content_frame)
         
-        # Center content
-        content = ttk.Frame(frame, style='Card.TFrame')
-        content.place(relx=0.5, rely=0.5, anchor='center')
+        # Create a scrollable canvas for the content
+        canvas = tk.Canvas(frame, bg=COLORS['card'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
         
-        ttk.Label(content, text="Dashboard", style='Title.TLabel').pack()
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        # Recent activity section
-        activity_frame = ttk.Frame(content, style='Card.TFrame')
-        activity_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=20)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=800)
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        ttk.Label(activity_frame, text="Recent Activity", style='Subtitle.TLabel').pack(anchor='w', padx=20, pady=10)
+        # Pack the scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True, padx=20)
+        
+        # Welcome section
+        welcome_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        welcome_frame.pack(fill='x', pady=(20, 30))
+        
+        ttk.Label(welcome_frame, text="Welcome Back!", style='Title.TLabel').pack()
+        self.welcome_label = ttk.Label(welcome_frame, text="", style='Subtitle.TLabel')
+        self.welcome_label.pack()
+        
+        # Quick Actions
+        actions_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        actions_frame.pack(fill='x', padx=40, pady=20)
+        
+        ttk.Label(actions_frame, text="Quick Actions", style='Title.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        buttons_frame = ttk.Frame(actions_frame, style='Card.TFrame')
+        buttons_frame.pack(fill='x')
+        
+        quick_actions = [
+            ("Donate Item", 'donation_form', '📦'),
+            ("Browse Items", 'donation_list', '🔍'),
+            ("Messages", 'chat', '💬'),
+            ("My Profile", 'profile', '👤')
+        ]
+        
+        for text, target, icon in quick_actions:
+            btn = ModernUI.create_button(
+                buttons_frame,
+                f"{icon} {text}",
+                lambda t=target: self.show_frame(t),
+                width=20
+            )
+            btn.pack(side='left', padx=5)
         
         self.frames['dashboard'] = frame
 
@@ -742,34 +855,122 @@ class DonateShareApp:
     def create_profile_frame(self):
         frame = ModernUI.create_card(self.content_frame)
         
-        # Center content
-        content = ttk.Frame(frame, style='Card.TFrame')
-        content.place(relx=0.5, rely=0.5, anchor='center')
+        # Create a scrollable canvas for the content
+        canvas = tk.Canvas(frame, bg=COLORS['card'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
         
-        ttk.Label(content, text="My Profile", style='Title.TLabel').pack()
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        # Profile information
-        info_frame = ttk.Frame(content, style='Card.TFrame')
-        info_frame.pack(padx=40, pady=20)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=800)
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        fields = ['Username:', 'Email:', 'Location:']
-        self.profile_labels = {}
+        # Pack the scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True, padx=20)
         
-        for i, field in enumerate(fields):
-            ttk.Label(info_frame, text=field, style='Subtitle.TLabel').grid(row=i, column=0, padx=20, pady=10, sticky='e')
-            label = ttk.Label(info_frame, text="", style='Subtitle.TLabel')
-            label.grid(row=i, column=1, padx=20, pady=10, sticky='w')
-            self.profile_labels[field] = label
+        # Profile Header
+        header_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        header_frame.pack(fill='x', pady=(20, 30))
         
-        # Buttons
-        button_frame = ttk.Frame(content)
-        button_frame.pack(fill=tk.X, pady=20)
+        # Profile Avatar
+        avatar_frame = ttk.Frame(header_frame, style='Card.TFrame')
+        avatar_frame.pack(pady=20)
+        avatar_label = ttk.Label(
+            avatar_frame,
+            text="👤",
+            font=('Segoe UI', 48),
+            background=COLORS['primary'],
+            foreground='white'
+        )
+        avatar_label.pack(pady=10)
         
-        ModernUI.create_button(button_frame, text="Edit Profile", command=self.edit_profile, style='Primary.TButton').pack(side=tk.LEFT, padx=5)
-        ModernUI.create_button(button_frame, text="Back to Dashboard", command=lambda: self.show_frame('dashboard'), style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="My Profile", style='Title.TLabel').pack()
+        
+        # Profile Information Section
+        info_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        info_frame.pack(fill='x', padx=40, pady=20)
+        
+        # Profile fields
+        self.profile_entries = {}
+        fields = [
+            ('Username:', False),  # (field_name, is_editable)
+            ('Email:', True),
+            ('Location:', True),
+            ('Join Date:', False),
+            ('Total Donations:', False)
+        ]
+        
+        for i, (field, editable) in enumerate(fields):
+            field_frame = ttk.Frame(info_frame, style='Card.TFrame')
+            field_frame.pack(fill='x', pady=5)
+            
+            ttk.Label(field_frame, text=field, style='Subtitle.TLabel').pack(anchor='w')
+            
+            if editable:
+                entry = ModernUI.create_entry(field_frame, width=40)
+                entry.pack(pady=(5, 10))
+                self.profile_entries[field] = entry
+            else:
+                label = ttk.Label(field_frame, text="", style='Subtitle.TLabel')
+                label.pack(pady=(5, 10))
+                self.profile_labels[field] = label
+        
+        # Statistics Section
+        stats_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        stats_frame.pack(fill='x', padx=40, pady=20)
+        
+        ttk.Label(stats_frame, text="Activity Statistics", style='Title.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        stats_grid = ttk.Frame(stats_frame, style='Card.TFrame')
+        stats_grid.pack(fill='x')
+        
+        stats = [
+            ("🎁 Donations Made", "0"),
+            ("📦 Items Received", "0"),
+            ("💬 Messages Sent", "0"),
+            ("⭐ Rating", "N/A")
+        ]
+        
+        for i, (label, value) in enumerate(stats):
+            stat_frame = ttk.Frame(stats_grid, style='Card.TFrame')
+            stat_frame.grid(row=i//2, column=i%2, padx=10, pady=10, sticky='nsew')
+            
+            ttk.Label(stat_frame, text=label, style='Subtitle.TLabel').pack()
+            ttk.Label(stat_frame, text=value, font=('Segoe UI', 24, 'bold')).pack()
+        
+        # Action Buttons
+        button_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        button_frame.pack(fill='x', padx=40, pady=20)
+        
+        ModernUI.create_button(
+            button_frame,
+            "Save Changes",
+            self.save_profile_changes,
+            width=20
+        ).pack(side='left', padx=5)
+        
+        ModernUI.create_button(
+            button_frame,
+            "Change Password",
+            self.change_password,
+            style='Secondary.TButton',
+            width=20
+        ).pack(side='left', padx=5)
+        
+        ModernUI.create_button(
+            button_frame,
+            "Back to Dashboard",
+            lambda: self.show_frame('dashboard'),
+            style='Secondary.TButton',
+            width=20
+        ).pack(side='right', padx=5)
         
         self.frames['profile'] = frame
-        
+
     def api_request(self, method, endpoint, data=None, params=None):
         url = f"{self.api_base_url}/{endpoint}"
         headers = {
@@ -977,25 +1178,101 @@ class DonateShareApp:
             self.message_entry.delete(0, tk.END)
             self.update_messages()
             
-    def edit_profile(self):
+    def save_profile_changes(self):
+        if not self.current_user:
+            messagebox.showerror("Error", "Please login first")
+            return
+            
         data = {
             'email': self.profile_entries['Email:'].get(),
             'location': self.profile_entries['Location:'].get()
         }
         
+        # Basic validation
+        if not data['email'] or not data['location']:
+            messagebox.showerror("Error", "All fields are required")
+            return
+            
+        if '@' not in data['email']:
+            messagebox.showerror("Error", "Invalid email format")
+            return
+            
         response = self.api_request('PUT', 'profile', data)
         
         if response:
             messagebox.showinfo("Success", "Profile updated successfully!")
             self.current_user.update(data)
             self.update_profile_display()
+
+    def change_password(self):
+        # Create password change window
+        password_window = tk.Toplevel(self.root)
+        password_window.title("Change Password")
+        password_window.geometry("400x300")
+        password_window.configure(bg=COLORS['card'])
+        
+        content = ttk.Frame(password_window, style='Card.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        ttk.Label(content, text="Change Password", style='Title.TLabel').pack(pady=(0, 20))
+        
+        # Password fields
+        ttk.Label(content, text="Current Password", style='Subtitle.TLabel').pack(anchor='w')
+        current_password = ModernUI.create_entry(content, show="•", width=30)
+        current_password.pack(pady=5)
+        
+        ttk.Label(content, text="New Password", style='Subtitle.TLabel').pack(anchor='w')
+        new_password = ModernUI.create_entry(content, show="•", width=30)
+        new_password.pack(pady=5)
+        
+        ttk.Label(content, text="Confirm New Password", style='Subtitle.TLabel').pack(anchor='w')
+        confirm_password = ModernUI.create_entry(content, show="•", width=30)
+        confirm_password.pack(pady=5)
+        
+        def submit_password_change():
+            if new_password.get() != confirm_password.get():
+                messagebox.showerror("Error", "New passwords do not match")
+                return
+                
+            if len(new_password.get()) < 6:
+                messagebox.showerror("Error", "Password must be at least 6 characters long")
+                return
+                
+            data = {
+                'current_password': current_password.get(),
+                'new_password': new_password.get()
+            }
             
+            response = self.api_request('PUT', 'change-password', data)
+            
+            if response:
+                messagebox.showinfo("Success", "Password changed successfully!")
+                password_window.destroy()
+        
+        ModernUI.create_button(
+            content,
+            "Change Password",
+            submit_password_change,
+            width=30
+        ).pack(pady=20)
+
     def update_profile_display(self):
         if self.current_user:
+            # Update labels
             self.profile_labels['Username:']['text'] = self.current_user['username']
-            self.profile_labels['Email:']['text'] = self.current_user['email']
-            self.profile_labels['Location:']['text'] = self.current_user['location']
+            self.profile_labels['Join Date:']['text'] = self.current_user.get('created_at', 'N/A')
+            self.profile_labels['Total Donations:']['text'] = str(self.current_user.get('total_donations', 0))
             
+            # Update entries
+            self.profile_entries['Email:'].delete(0, tk.END)
+            self.profile_entries['Email:'].insert(0, self.current_user['email'])
+            self.profile_entries['Location:'].delete(0, tk.END)
+            self.profile_entries['Location:'].insert(0, self.current_user['location'])
+            
+            # Update welcome message in dashboard
+            if hasattr(self, 'welcome_label'):
+                self.welcome_label.config(text=f"Welcome back, {self.current_user['username']}!")
+
     def update_dashboard(self):
         # Update any dashboard widgets with current user data
         pass

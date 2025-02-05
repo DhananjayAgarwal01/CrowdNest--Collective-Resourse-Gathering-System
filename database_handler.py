@@ -9,7 +9,7 @@ import uuid
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': '12345678',
+    'password': 'Dhananjay@007',
     'database': 'donateshare'
 }
 
