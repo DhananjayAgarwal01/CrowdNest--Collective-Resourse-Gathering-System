@@ -1,0 +1,6 @@
+Flask>=2.0.1
+mysql-connector-python>=8.0.26
+requests>=2.26.0
+PyJWT>=2.1.0
+pillow>=9.0.0
+python-tk==0.1.0 
