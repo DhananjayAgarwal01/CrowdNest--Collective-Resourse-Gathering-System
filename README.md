@@ -1,93 +1,88 @@
-# CrowdNest - Item Donation Platform
+# CrowdNest - Collective Resource Gathering System
 
-A desktop application built with Python, Tkinter, and Flask that allows users to donate and request items, chat with other users, and manage their donations.
+CrowdNest is a desktop application built with Python and MySQL that facilitates resource sharing and donation management within communities. It features a modern Tkinter GUI and secure database operations.
 
 ## Features
 
-- User authentication (login/register)
-- Create and browse donations
-- Real-time messaging between users
-- User profile management
-- Search functionality for donations
-- Modern and intuitive UI
+- User authentication and profile management
+- Donation creation and management
+- Resource browsing and searching
+- Messaging system between users
+- Modern and intuitive user interface
+- Location-based filtering
+- Real-time updates
 
 ## Prerequisites
 
 - Python 3.8 or higher
-- MySQL Server
+- MySQL Server 8.0 or higher
 - Tkinter (usually comes with Python)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/yourusername/CrowdNest.git
 cd CrowdNest
 ```
 
-2. Create a virtual environment and activate it:
-```bash
-python -m venv venv
-# On Windows
-venv\Scripts\activate
-# On macOS/Linux
-source venv/bin/activate
-```
-
-3. Install the required packages:
+2. Install required packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Configure the application:
-   - Open `database_handler.py` and update the `DB_CONFIG` dictionary with your MySQL credentials:
-   ```python
-   DB_CONFIG = {
-       'host': 'localhost',
-       'user': 'your_mysql_username',
-       'password': 'your_mysql_password',
-       'database': 'CrowdNest'
-   }
-   ```
-   - Open `flask_routes.py` and update the `SECRET_KEY` with a secure key:
-   ```python
-   SECRET_KEY = 'your-secure-secret-key'
-   ```
+3. Configure MySQL:
+- Create a MySQL database named `CrowdNest`
+- Update the database configuration in `database_handler.py` with your MySQL credentials:
+```python
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'your_username',
+    'password': 'your_password',
+    'database': 'CrowdNest'
+}
+```
 
-5. Initialize the database:
+4. Initialize the database:
 ```bash
 python db_init.py
 ```
 
-## Usage
+## Running the Application
 
-1. Start the application:
+Start the application by running:
 ```bash
 python tkinter_app.py
 ```
 
-2. Register a new account or login with existing credentials
-
-3. Use the navigation buttons to:
-   - View and create donations
-   - Browse available items
-   - Chat with other users
-   - Manage your profile
-
 ## Project Structure
 
-- `tkinter_app.py`: Main application file with Tkinter UI
-- `flask_routes.py`: Flask backend routes
-- `database_handler.py`: Database operations
-- `db_init.py`: Database initialization script
+- `tkinter_app.py`: Main application file with GUI implementation
+- `database_handler.py`: Database operations and connection management
+- `db_init.py`: Database initialization and schema creation
+- `requirements.txt`: Project dependencies
+
+## Database Schema
+
+The application uses the following tables:
+- `users`: User account information
+- `donations`: Donation listings
+- `requests`: Donation requests
+- `messages`: User-to-user communication
 
 ## Contributing
 
 1. Fork the repository
-2. Create a new branch
-3. Make your changes
-4. Submit a pull request
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- Thanks to all contributors who have helped shape CrowdNest
+- Special thanks to the open-source community for the tools and libraries used in this project 

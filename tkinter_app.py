@@ -1,14 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import mysql.connector
-from flask import Flask
-from threading import Thread
-import webbrowser
+from database_handler import DatabaseHandler
 from PIL import Image, ImageTk
 import os
-import requests
-import json
-from flask_routes import app  # Import the Flask app with routes
+from datetime import datetime
 
 # Modern Color scheme
 COLORS = {
@@ -267,7 +262,7 @@ class ModernUI:
         state_dropdown.set("Select State")
         
         # City dropdown
-        city_label = ttk.Label(location_frame, text="🏙️ City", style='Subtitle.TLabel')
+        city_label = ttk.Label(location_frame, text="🏙 City", style='Subtitle.TLabel')
         city_label.pack(anchor='w')
         
         city_dropdown = ttk.Combobox(location_frame, textvariable=city_var, state='readonly', width=37)
@@ -366,42 +361,54 @@ class CustomStyle:
         )
 
 class CrowdNestApp:
-    def __init__(self, root):
+    def __init__(self, root):  # ✅ Corrected
         self.root = root
         self.root.title("CrowdNest")
-        self.root.geometry("1200x800")
-        self.root.configure(bg=COLORS['background'])
-        self.root.state("zoomed")
-        # Initialize session data
-        self.token = None
+        self.root.state('zoomed')
+        
+        # Initialize database handler
+        self.db = DatabaseHandler()
+        
+        # Initialize current user
         self.current_user = None
-        self.api_base_url = "http://127.0.0.1:5000/api"
         
-        # Initialize location variables
-        self.state_var = tk.StringVar()
-        self.city_var = tk.StringVar()
-        
-        # Initialize profile data
+        # Initialize dictionaries
         self.profile_labels = {}
         self.profile_entries = {}
+        self.donation_entries = {}
         
-        # Configure custom styles
+        # Initialize location variables
+        self.reg_state_var = tk.StringVar()
+        self.reg_city_var = tk.StringVar()
+        self.donation_state_var = tk.StringVar()
+        self.donation_city_var = tk.StringVar()
+        self.profile_state_var = tk.StringVar()
+        self.profile_city_var = tk.StringVar()
+        
+        # Initialize filter variables
+        self.category_filter = tk.StringVar()
+        self.condition_filter = tk.StringVar()
+        self.location_filter = tk.StringVar()
+        
+        # Configure styles
         CustomStyle.configure_styles()
         
-        # Create main container with navigation
-        self.main_container = ttk.Frame(self.root, style='Card.TFrame')
-        self.main_container.pack(fill='both', expand=True)
+        # Create main container
+        self.container = ttk.Frame(root)
+        self.container.pack(fill='both', expand=True)
         
-        # Create navigation pane
-        self.nav_pane = NavigationPane(self.main_container, self.show_frame)
-        
-        # Create content frame
-        self.content_frame = ttk.Frame(self.main_container, style='Card.TFrame')
-        
-        # Initialize frames dictionary
+        # Create frames dictionary
         self.frames = {}
         
-        # Create frames
+        # Create and show login frame
+        self.content_frame = ttk.Frame(self.container, style='Content.TFrame')
+        self.content_frame.pack(fill='both', expand=True, side='right')
+        
+        # Create navigation pane (initially hidden)
+        self.nav_pane = NavigationPane(self.container, self.show_frame)
+        
+        
+        # Create all frames
         self.create_login_frame()
         self.create_register_frame()
         self.create_dashboard_frame()
@@ -410,8 +417,174 @@ class CrowdNestApp:
         self.create_chat_frame()
         self.create_profile_frame()
         
-        # Show login frame by default
+        # Show login frame
         self.show_frame('login')
+
+    def login(self):
+        username = self.login_username.get()
+        password = self.login_password.get()
+        
+        user = self.db.verify_user(username, password)
+        if user:
+            self.current_user = user
+            self.nav_pane.pack(fill='y', side='left')
+            self.show_frame('dashboard')
+            self.update_dashboard()
+        else:
+            messagebox.showerror("Error", "Invalid credentials")
+
+    def register(self):
+        # Get form data from dictionary
+        username = self.reg_entries["Username"].get()
+        email = self.reg_entries["Email"].get()
+        password = self.reg_entries["Password"].get()
+        confirm_password = self.reg_entries["Confirm Password"].get()
+
+        # Get location data
+        state = self.reg_state_var.get()
+        city = self.reg_city_var.get()
+
+        # Validate inputs
+        if not all([username, email, password, confirm_password, state, city]):
+            messagebox.showerror("Error", "All fields are required")
+            return
+
+        if password != confirm_password:
+            messagebox.showerror("Error", "Passwords do not match")
+            return
+
+        if len(password) < 6:
+            messagebox.showerror("Error", "Password must be at least 6 characters long")
+            return
+
+        if '@' not in email:
+            messagebox.showerror("Error", "Invalid email format")
+            return
+
+        # Combine state and city
+        location = f"{city}, {state}"
+
+        # Create user in the database
+        if self.db.create_user(username, password, email, location):
+            messagebox.showinfo("Success", "Registration successful! Please login.")
+            self.show_frame('login')
+        else:
+            messagebox.showerror("Error", "Username or email already exists")
+
+
+    def submit_donation(self):
+        # Get form data
+        title = self.donation_title.get()
+        description = self.donation_description.get("1.0", "end-1c")
+        category = self.donation_category_var.get()
+        condition = self.donation_condition_var.get()
+        state = self.donation_state_var.get()
+        city = self.donation_city_var.get()
+        
+        # Validate inputs
+        if not all([title, description, category, condition, state, city]):
+            messagebox.showerror("Error", "All fields are required")
+            return
+            
+        # Combine state and city
+        location = f"{city}, {state}"
+        
+        # Create donation
+        if self.db.create_donation(
+            self.current_user['unique_id'],
+            title,
+            description,
+            category,
+            condition,
+            location,
+            None  # image_path
+        ):
+            messagebox.showinfo("Success", "Donation created successfully!")
+            self.show_frame('donation_list')
+        else:
+            messagebox.showerror("Error", "Failed to create donation")
+
+    def search_donations(self):
+        search_term = self.search_entry.get()
+        donations = self.db.get_donations(search_term)
+        self.update_donation_list(donations)
+
+    def send_message(self):
+        if not self.message_entry.get():
+            return
+            
+        if self.db.send_message(
+            self.current_user['unique_id'],
+            self.selected_chat_user['unique_id'],
+            self.message_entry.get()
+        ):
+            self.message_entry.delete(0, 'end')
+            self.update_chat_messages()
+        else:
+            messagebox.showerror("Error", "Failed to send message")
+
+    def save_profile_changes(self):
+        email = self.profile_email.get()
+        state = self.profile_state_var.get()
+        city = self.profile_city_var.get()
+        location = f"{city}, {state}"
+        
+        if self.db.update_profile(
+            self.current_user['unique_id'],
+            email=email,
+            location=location
+        ):
+            messagebox.showinfo("Success", "Profile updated successfully!")
+            self.current_user['email'] = email
+            self.current_user['location'] = location
+            self.update_profile_display()
+        else:
+            messagebox.showerror("Error", "Failed to update profile")
+
+    def show_frame(self, frame_name):
+        # Hide all frames
+        for frame in self.frames.values():
+            frame.pack_forget()
+        
+        # Show/hide navigation based on login state
+        if frame_name in ['login', 'register']:
+            self.nav_pane.pack_forget()
+            self.content_frame.pack(fill='both', expand=True)
+        else:
+            self.nav_pane.pack(side='left', fill='y')
+            self.content_frame.pack(side='left', fill='both', expand=True)
+        
+        # Show requested frame
+        self.frames[frame_name].pack(fill='both', expand=True)
+        
+        # Perform any necessary updates
+        if frame_name == 'profile':
+            self.update_profile_display()
+        elif frame_name == 'donation_list':
+            self.search_donations()
+        elif frame_name == 'chat':
+            self.update_messages()
+
+    def update_profile_display(self):
+        if self.current_user:
+            # Update labels
+            self.profile_labels['Username:']['text'] = self.current_user['username']
+            self.profile_labels['Join Date:']['text'] = self.current_user.get('created_at', 'N/A')
+            self.profile_labels['Total Donations:']['text'] = str(self.current_user.get('total_donations', 0))
+            
+            # Update entries
+            self.profile_entries['Email:'].delete(0, tk.END)
+            self.profile_entries['Email:'].insert(0, self.current_user['email'])
+            self.profile_entries['Location:'].delete(0, tk.END)
+            self.profile_entries['Location:'].insert(0, self.current_user['location'])
+            
+            # Update welcome message in dashboard
+            if hasattr(self, 'welcome_label'):
+                self.welcome_label.config(text=f"Welcome back, {self.current_user['username']}!")
+
+    def update_dashboard(self):
+        # Update any dashboard widgets with current user data
+        pass
 
     def create_login_frame(self):
         frame = ModernUI.create_card(self.content_frame)
@@ -428,11 +601,11 @@ class CrowdNestApp:
         ttk.Label(content, text="Sign in to continue", style='Subtitle.TLabel').pack(pady=(0, 30))
         
         # Login form
-        self.username_entry = ModernUI.create_entry(content, "Username", width=40)
-        self.username_entry.pack(pady=10)
+        self.login_username = ModernUI.create_entry(content, "Username", width=40)
+        self.login_username.pack(pady=10)
         
-        self.password_entry = ModernUI.create_entry(content, "Password", show="•", width=40)
-        self.password_entry.pack(pady=10)
+        self.login_password = ModernUI.create_entry(content, "Password", show="•", width=40)
+        self.login_password.pack(pady=10)
         
         # Buttons
         ModernUI.create_button(content, "Sign In", self.login, width=40).pack(pady=20)
@@ -442,33 +615,6 @@ class CrowdNestApp:
                              style='Secondary.TButton', width=40).pack()
         
         self.frames['login'] = frame
-    def check_password_strength(self, event=None):
-        password = self.register_entries["Password"].get()
-        strength = 0
-
-        # Password Strength Criteria
-        if len(password) >= 8:
-            strength += 1
-        if any(char.isdigit() for char in password):
-            strength += 1
-        if any(char.isupper() for char in password):
-            strength += 1
-        if any(char.islower() for char in password):
-            strength += 1
-        if any(char in "!@#$%^&*()-_=+[]{}|;:,.<>?/" for char in password):
-            strength += 1
-
-        # Update UI Based on Strength Level
-        if strength == 0:
-            self.password_strength_label.config(text="Password Strength: Very Weak", foreground="red")
-        elif strength == 1 or strength == 2:
-            self.password_strength_label.config(text="Password Strength: Weak", foreground="orange")
-        elif strength == 3:
-            self.password_strength_label.config(text="Password Strength: Moderate", foreground="blue")
-        elif strength == 4:
-            self.password_strength_label.config(text="Password Strength: Strong", foreground="green")
-        else:
-            self.password_strength_label.config(text="Password Strength: Very Strong", foreground="darkgreen")
 
     def create_register_frame(self):
         # Create a main frame inside content_frame
@@ -480,57 +626,52 @@ class CrowdNestApp:
 
         # Create a scrollable frame inside the canvas
         scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
-
-        # Attach the scrollable frame to the canvas (set a default width to prevent shifting)
         frame_window = canvas.create_window(0, 0, window=scrollable_frame, anchor="n", width=500)
 
+        # Scroll configuration
         def update_window_position():
-            """ Ensure content is centered properly on initial load and when resized. """
             canvas.itemconfig(frame_window, width=canvas.winfo_width())
 
-        # Delay to ensure Tkinter has rendered everything before centering
         canvas.after(200, update_window_position)
         canvas.bind("<Configure>", lambda event: update_window_position())
 
         def update_scroll_region(event):
-            """ Adjust scroll region dynamically. """
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         scrollable_frame.bind("<Configure>", update_scroll_region)
 
+        # Enable mouse scrolling
         def _on_mouse_wheel(event):
-            """ Enable smooth scrolling using mouse wheel. """
-            if event.num == 5 or event.delta == -120:  # Scroll Down (Linux & Windows)
+            if event.num == 5 or event.delta == -120:
                 canvas.yview_scroll(1, "units")
-            elif event.num == 4 or event.delta == 120:  # Scroll Up (Linux & Windows)
+            elif event.num == 4 or event.delta == 120:
                 canvas.yview_scroll(-1, "units")
 
-        # Bind mouse scrolling
         canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
-        canvas.bind_all("<Button-4>", _on_mouse_wheel)   # Linux Scroll Up
-        canvas.bind_all("<Button-5>", _on_mouse_wheel)   # Linux Scroll Down
+        canvas.bind_all("<Button-4>", _on_mouse_wheel)
+        canvas.bind_all("<Button-5>", _on_mouse_wheel)
 
-        # Configure canvas and scrollbar
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # WRAPPER FRAME (Expands fully to center content)
+        # Wrapper frame
         wrapper_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        wrapper_frame.pack(fill='both', expand=True)  # Ensures no shifting
+        wrapper_frame.pack(fill='both', expand=True)
 
-        # CONTENT FRAME (Holds form elements)
+        # Content frame
         content = ttk.Frame(wrapper_frame, style='Card.TFrame')
-        content.pack(pady=40, padx=20, anchor="center")  # Keep spacing & center
+        content.pack(pady=40, padx=20, anchor="center")
 
-        # HEADER SECTION
+        # Header section
         ttk.Label(content, text="🎁", font=('Poppins', 40), foreground=COLORS['primary']).pack(anchor="center")
         ttk.Label(content, text="Create Account", font=('Poppins', 20, 'bold'), foreground=COLORS['text']).pack(pady=(5, 2), anchor="center")
         ttk.Label(content, text="Join our community and start sharing!", font=('Poppins', 12), foreground=COLORS['text_light']).pack(anchor="center")
 
-        # REGISTRATION FORM
-        self.register_entries = {}
+        # Initialize registration entries dictionary
+        self.reg_entries = {}
 
+        # Registration form fields
         form_fields = [
             ("👤 Username", "Username", "Enter your username"),
             ("📧 Email", "Email", "Enter your email"),
@@ -548,34 +689,31 @@ class CrowdNestApp:
             entry = ModernUI.create_entry(field_frame, placeholder=placeholder, show=show_char, width=40)
             entry.pack(pady=(5, 0), ipadx=5, ipady=10)
 
-            # ✅ Store the correct key
-            self.register_entries[dict_key] = entry 
+            self.reg_entries[dict_key] = entry  # Store in dictionary
+
             # Password Strength Indicator
-            if label_text == "Password":
+            if label_text == "🔒 Password":
                 self.password_strength_label = ttk.Label(field_frame, text="Password Strength: Weak", font=('Poppins', 10), foreground="red")
                 self.password_strength_label.pack(anchor='w', pady=(5, 10))
                 entry.bind('<KeyRelease>', self.check_password_strength)
 
-        # LOCATION SELECTOR
+        # Initialize state and city variables
+        self.reg_state_var = tk.StringVar()
+        self.reg_city_var = tk.StringVar()
+
+        # Location selector
         ttk.Label(content, text="📍 Location", font=('Poppins', 11, 'bold'), foreground=COLORS['text']).pack(anchor='center', padx=20)
-        location_selector = ModernUI.create_location_selector(content, self.state_var, self.city_var)
+        location_selector = ModernUI.create_location_selector(content, self.reg_state_var, self.reg_city_var)
         location_selector.pack(fill='x', pady=(5, 20), padx=40)
 
-        # Store location variables
-        
-        self.register_entries['State'] = self.state_var
-        self.register_entries['City'] = self.city_var
-
-        # BUTTONS
+        # Buttons
         button_frame = ttk.Frame(content, style='Card.TFrame')
         button_frame.pack(fill='x', pady=20, padx=40)
 
         ModernUI.create_button(button_frame, "✅ Create Account", self.register, width=25).pack(side='left', padx=5, pady=5)
         ModernUI.create_button(button_frame, "🔙 Back to Login", lambda: self.show_frame('login'), style='Secondary.TButton', width=25).pack(side='right', padx=5, pady=5)
 
-        self.frames['register'] = frame  # Store reference to frame
-
-
+        self.frames['register'] = frame
 
 
     def create_dashboard_frame(self):
@@ -706,12 +844,12 @@ class CrowdNestApp:
         # Replace the old location dropdown with new location selector
         loc_frame = ttk.Frame(content, style='Card.TFrame')
         loc_frame.pack(fill='x', pady=(0, 20))
-        location_selector = ModernUI.create_location_selector(loc_frame, self.state_var, self.city_var)
+        location_selector = ModernUI.create_location_selector(loc_frame, self.donation_state_var, self.donation_city_var)
         location_selector.pack(fill='x')
         
         # Store the location variables
-        self.donation_entries['State:'] = self.state_var
-        self.donation_entries['City:'] = self.city_var
+        self.donation_entries['State:'] = self.donation_state_var
+        self.donation_entries['City:'] = self.donation_city_var
         
         # Image upload (placeholder for future implementation)
         img_frame = ttk.Frame(content, style='Card.TFrame')
@@ -950,6 +1088,17 @@ class CrowdNestApp:
                 label.pack(pady=(5, 10))
                 self.profile_labels[field] = label
         
+        # Location selector
+        location_frame = ttk.Frame(info_frame, style='Card.TFrame')
+        location_frame.pack(fill='x', pady=5)
+        ttk.Label(location_frame, text="Location:", style='Subtitle.TLabel').pack(anchor='w')
+        location_selector = ModernUI.create_location_selector(location_frame, self.profile_state_var, self.profile_city_var)
+        location_selector.pack(pady=(5, 10))
+        
+        # Store location variables
+        self.profile_entries['State:'] = self.profile_state_var
+        self.profile_entries['City:'] = self.profile_city_var
+        
         # Statistics Section
         stats_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
         stats_frame.pack(fill='x', padx=40, pady=20)
@@ -984,13 +1133,6 @@ class CrowdNestApp:
             width=20
         ).pack(side='left', padx=5)
         
-        ModernUI.create_button(
-            button_frame,
-            "Change Password",
-            self.change_password,
-            style='Secondary.TButton',
-            width=20
-        ).pack(side='left', padx=5)
         
         ModernUI.create_button(
             button_frame,
@@ -1001,339 +1143,6 @@ class CrowdNestApp:
         ).pack(side='right', padx=5)
         
         self.frames['profile'] = frame
-
-    def api_request(self, method, endpoint, data=None, params=None):
-        url = f"{self.api_base_url}/{endpoint}"
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        
-        if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
-            
-        try:
-            if method == 'GET':
-                response = requests.get(url, headers=headers, params=params)
-            elif method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            elif method == 'PUT':
-                response = requests.put(url, headers=headers, json=data)
-            
-            response.raise_for_status()  # Raise an exception for bad status codes
-            
-            if response.status_code in (200, 201):
-                return response.json()
-            else:
-                error_msg = response.json().get('message', 'An error occurred')
-                messagebox.showerror("Error", error_msg)
-                return None
-                
-        except requests.exceptions.RequestException as e:
-            print(f"API request error: {str(e)}")
-            if hasattr(e.response, 'json'):
-                error_msg = e.response.json().get('message', str(e))
-            else:
-                error_msg = str(e)
-            messagebox.showerror("Error", f"Connection error: {error_msg}")
-            return None
-        
-    def login(self):
-        data = {
-            'username': self.username_entry.get(),
-            'password': self.password_entry.get()
-        }
-        
-        response = self.api_request('POST', 'login', data)
-        
-        if response:
-            self.token = response['token']
-            self.current_user = response['user']
-            self.show_frame('dashboard')
-            self.update_dashboard()
-            
-    def register(self):
-        data = {
-            'username': self.register_entries['Username'].get(),
-            'email': self.register_entries['Email'].get(),
-            'password': self.register_entries['Password'].get(),
-            'state': self.state_var.get(),
-            'city': self.city_var.get()
-        }
-
-        # Basic validation
-        if not all(data.values()) or data['state'] == "Select State" or data['city'] == "Select City":
-            messagebox.showerror("Error", "All fields are required")
-            return
-
-        if data['password'] != self.register_entries['Confirm Password'].get():
-            messagebox.showerror("Error", "Passwords do not match")
-            return
-
-        if len(data['password']) < 6:
-            messagebox.showerror("Error", "Password must be at least 6 characters long")
-            return
-
-        if len(data['username']) < 3:
-            messagebox.showerror("Error", "Username must be at least 3 characters long")
-            return
-
-        if '@' not in data['email']:
-            messagebox.showerror("Error", "Invalid email format")
-            return
-
-        try:
-            response = self.api_request('POST', 'register', data)
-
-            if response:
-                messagebox.showinfo("Success", "Registration successful! Please login.")
-                self.show_frame('login')
-
-                # Clear form
-                for entry in self.register_entries.values():
-                    if isinstance(entry, tk.Entry):  # ✅ Only delete from Entry widgets
-                        entry.delete(0, tk.END)
-
-                self.state_var.set("Select State")  # ✅ Reset dropdowns properly
-                self.city_var.set("Select City")  # ✅ Reset dropdowns properly
-
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Registration failed: {str(e)}")
-            print(f"Registration error: {str(e)}")
-
-            
-    def submit_donation(self):
-        # Basic validation
-        if not self.current_user:
-            messagebox.showerror("Error", "Please login first")
-            return
-            
-        data = {
-            'title': self.donation_entries['Title:'].get(),
-            'description': self.donation_entries['Description:'].get("1.0", tk.END).strip(),
-            'category': self.donation_entries['Category:'].get(),
-            'condition': self.donation_entries['Condition:'].get(),
-            'state': self.state_var.get(),
-            'city': self.city_var.get()
-        }
-        
-        # Validate required fields
-        if not data['title'] or not data['description']:
-            messagebox.showerror("Error", "Title and description are required")
-            return
-            
-        # Validate dropdowns
-        if data['category'] == "Select Category":
-            messagebox.showerror("Error", "Please select a category")
-            return
-        if data['condition'] == "Select Condition":
-            messagebox.showerror("Error", "Please select a condition")
-            return
-        if data['state'] == "Select State" or data['city'] == "Select City":
-            messagebox.showerror("Error", "Please select both state and city")
-            return
-            
-        # Validate text lengths
-        if len(data['title']) > 100:
-            messagebox.showerror("Error", "Title must be less than 100 characters")
-            return
-        if len(data['description']) > 500:
-            messagebox.showerror("Error", "Description must be less than 500 characters")
-            return
-        
-        # Combine state and city for location
-        data['location'] = f"{data['city']}, {data['state']}"
-        
-        # Remove state and city from data before sending
-        del data['state']
-        del data['city']
-        
-        try:
-            print(f"Submitting donation data: {data}")
-            response = self.api_request('POST', 'donations', data)
-            
-            if response:
-                messagebox.showinfo("Success", "Donation created successfully!")
-                # Clear the form
-                self.donation_entries['Title:'].delete(0, tk.END)
-                self.donation_entries['Description:'].delete("1.0", tk.END)
-                self.donation_entries['Category:'].set("Select Category")
-                self.donation_entries['Condition:'].set("Select Condition")
-                self.state_var.set("Select State")
-                self.city_var.set("Select City")
-                # Return to dashboard
-                self.show_frame('dashboard')
-        except Exception as e:
-            error_msg = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    error_data = e.response.json()
-                    error_msg = error_data.get('message', str(e))
-                except:
-                    pass
-            messagebox.showerror("Error", f"Failed to create donation: {error_msg}")
-            print(f"Donation creation error: {error_msg}")
-            
-    def search_donations(self):
-        search_term = self.search_entry.get()
-        donations = self.api_request('GET', 'donations', params={'search': search_term})
-        
-        print(f"Fetched donations: {donations}")  # Debugging output
-        
-        if donations:
-            self.donations_tree.delete(*self.donations_tree.get_children())
-            
-            for donation in donations:
-                self.donations_tree.insert('', 'end', values=(
-                    donation['title'],
-                    donation['category'],
-                    donation['condition'],
-                    donation['location']
-                ))
-
-                
-    def send_message(self):
-        if not hasattr(self, 'selected_contact'):
-            messagebox.showerror("Error", "Please select a contact first")
-            return
-            
-        content = self.message_entry.get()
-        if not content:
-            return
-            
-        data = {
-            'receiver_id': self.selected_contact,
-            'content': content
-        }
-        
-        response = self.api_request('POST', 'messages', data)
-        
-        if response:
-            self.message_entry.delete(0, tk.END)
-            self.update_messages()
-            
-    def save_profile_changes(self):
-        if not self.current_user:
-            messagebox.showerror("Error", "Please login first")
-            return
-            
-        data = {
-            'email': self.profile_entries['Email:'].get(),
-            'location': self.profile_entries['Location:'].get()
-        }
-        
-        # Basic validation
-        if not data['email'] or not data['location']:
-            messagebox.showerror("Error", "All fields are required")
-            return
-            
-        if '@' not in data['email']:
-            messagebox.showerror("Error", "Invalid email format")
-            return
-            
-        response = self.api_request('PUT', 'profile', data)
-        
-        if response:
-            messagebox.showinfo("Success", "Profile updated successfully!")
-            self.current_user.update(data)
-            self.update_profile_display()
-
-    def change_password(self):
-        # Create password change window
-        password_window = tk.Toplevel(self.root)
-        password_window.title("Change Password")
-        password_window.geometry("400x300")
-        password_window.configure(bg=COLORS['card'])
-        
-        content = ttk.Frame(password_window, style='Card.TFrame')
-        content.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        ttk.Label(content, text="Change Password", style='Title.TLabel').pack(pady=(0, 20))
-        
-        # Password fields
-        ttk.Label(content, text="Current Password", style='Subtitle.TLabel').pack(anchor='w')
-        current_password = ModernUI.create_entry(content, show="•", width=30)
-        current_password.pack(pady=5)
-        
-        ttk.Label(content, text="New Password", style='Subtitle.TLabel').pack(anchor='w')
-        new_password = ModernUI.create_entry(content, show="•", width=30)
-        new_password.pack(pady=5)
-        
-        ttk.Label(content, text="Confirm New Password", style='Subtitle.TLabel').pack(anchor='w')
-        confirm_password = ModernUI.create_entry(content, show="•", width=30)
-        confirm_password.pack(pady=5)
-        
-        def submit_password_change():
-            if new_password.get() != confirm_password.get():
-                messagebox.showerror("Error", "New passwords do not match")
-                return
-                
-            if len(new_password.get()) < 6:
-                messagebox.showerror("Error", "Password must be at least 6 characters long")
-                return
-                
-            data = {
-                'current_password': current_password.get(),
-                'new_password': new_password.get()
-            }
-            
-            response = self.api_request('PUT', 'change-password', data)
-            
-            if response:
-                messagebox.showinfo("Success", "Password changed successfully!")
-                password_window.destroy()
-        
-        ModernUI.create_button(
-            content,
-            "Change Password",
-            submit_password_change,
-            width=30
-        ).pack(pady=20)
-
-    def update_profile_display(self):
-        if self.current_user:
-            # Update labels
-            self.profile_labels['Username:']['text'] = self.current_user['username']
-            self.profile_labels['Join Date:']['text'] = self.current_user.get('created_at', 'N/A')
-            self.profile_labels['Total Donations:']['text'] = str(self.current_user.get('total_donations', 0))
-            
-            # Update entries
-            self.profile_entries['Email:'].delete(0, tk.END)
-            self.profile_entries['Email:'].insert(0, self.current_user['email'])
-            self.profile_entries['Location:'].delete(0, tk.END)
-            self.profile_entries['Location:'].insert(0, self.current_user['location'])
-            
-            # Update welcome message in dashboard
-            if hasattr(self, 'welcome_label'):
-                self.welcome_label.config(text=f"Welcome back, {self.current_user['username']}!")
-
-    def update_dashboard(self):
-        # Update any dashboard widgets with current user data
-        pass
-        
-    def show_frame(self, frame_name):
-        # Hide all frames
-        for frame in self.frames.values():
-            frame.pack_forget()
-        
-        # Show/hide navigation based on login state
-        if frame_name in ['login', 'register']:
-            self.nav_pane.pack_forget()
-            self.content_frame.pack(fill='both', expand=True)
-        else:
-            self.nav_pane.pack(side='left', fill='y')
-            self.content_frame.pack(side='left', fill='both', expand=True)
-        
-        # Show requested frame
-        self.frames[frame_name].pack(fill='both', expand=True)
-        
-        # Perform any necessary updates
-        if frame_name == 'profile':
-            self.update_profile_display()
-        elif frame_name == 'donation_list':
-            self.search_donations()
-        elif frame_name == 'chat':
-            self.update_messages()
 
     def update_char_counter(self, widget, counter_label, max_chars, is_text=False):
         if is_text:
@@ -1353,8 +1162,8 @@ class CrowdNestApp:
             'description': self.donation_entries['Description:'].get("1.0", tk.END).strip(),
             'category': self.donation_entries['Category:'].get(),
             'condition': self.donation_entries['Condition:'].get(),
-            'state': self.state_var.get(),
-            'city': self.city_var.get()
+            'state': self.donation_state_var.get(),
+            'city': self.donation_city_var.get()
         }
         
         # Create preview window
@@ -1428,7 +1237,6 @@ class CrowdNestApp:
         
         ttk.Label(content, text="Request Item", style='Title.TLabel').pack(pady=(0, 20))
         
-        # Message field
         ttk.Label(content, text="Message to Donor", style='Subtitle.TLabel').pack(anchor='w')
         message = tk.Text(content, height=6, width=40, wrap='word')
         message.configure(font=('Segoe UI', 10), padx=10, pady=5)
@@ -1473,7 +1281,7 @@ class CrowdNestApp:
             'message': message
         }
         
-        response = self.api_request('POST', 'requests', data)
+        response = self.db.send_request(data)
         
         if response:
             messagebox.showinfo("Success", "Request sent successfully!")
@@ -1494,15 +1302,47 @@ class CrowdNestApp:
         self.show_frame('chat')
         # Additional logic to start chat with donor
 
-def run_flask():
-    app.run(host='127.0.0.1', port=5000)  # Add explicit host and port
+    def check_password_strength(self, event=None):
+        """Check password strength and update the indicator"""
+        if not hasattr(self, 'reg_entries') or 'Password' not in self.reg_entries:
+            return
+            
+        password = self.reg_entries['Password'].get()
+        strength = 0
+        
+        # Length check
+        if len(password) >= 8:
+            strength += 1
+            
+        # Digit check
+        if any(char.isdigit() for char in password):
+            strength += 1
+            
+        # Uppercase check
+        if any(char.isupper() for char in password):
+            strength += 1
+            
+        # Lowercase check
+        if any(char.islower() for char in password):
+            strength += 1
+            
+        # Special character check
+        if any(char in "!@#$%^&*()-_=+[]{}|;:,.<>?/" for char in password):
+            strength += 1
+            
+        # Update label based on strength
+        if strength == 0:
+            self.password_strength_label.config(text="Password Strength: Very Weak", foreground=COLORS['error'])
+        elif strength == 1 or strength == 2:
+            self.password_strength_label.config(text="Password Strength: Weak", foreground=COLORS['warning'])
+        elif strength == 3:
+            self.password_strength_label.config(text="Password Strength: Moderate", foreground=COLORS['accent'])
+        elif strength == 4:
+            self.password_strength_label.config(text="Password Strength: Strong", foreground=COLORS['success'])
+        else:
+            self.password_strength_label.config(text="Password Strength: Very Strong", foreground=COLORS['success'])
 
 if __name__ == "__main__":
-    # Start Flask in a separate thread
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Create and run Tkinter app
     root = tk.Tk()
     app = CrowdNestApp(root)
-    root.mainloop() 
+    root.mainloop()
