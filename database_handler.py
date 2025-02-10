@@ -40,32 +40,27 @@ class DatabaseHandler:
     def create_user(self, username, password, email, location):
         self.ensure_connection()
         cursor = self.connection.cursor()
-        
+
         try:
-            # Check if username or email already exists
-            cursor.execute("SELECT id FROM users WHERE username = %s OR email = %s", (username, email))
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)", (username, email))
             if cursor.fetchone():
                 return False
-                
+
             hashed_password = self.hash_password(password)
             unique_id = str(uuid.uuid4())
-            
-            query = """
-                INSERT INTO users (unique_id, username, password_hash, email, location)
-                VALUES (%s, %s, %s, %s, %s)
-            """
+
+            query = "INSERT INTO users (unique_id, username, password_hash, email, location) VALUES (%s, %s, %s, %s, %s)"
             cursor.execute(query, (unique_id, username, hashed_password, email, location))
             self.connection.commit()
             return True
-            
+
         except IntegrityError:
-            print("Username or email already exists")
             return False
         except Error as e:
-            print(f"Error creating user: {e}")
             return False
         finally:
             cursor.close()
+
             
     def verify_user(self, username, password):
         self.ensure_connection()

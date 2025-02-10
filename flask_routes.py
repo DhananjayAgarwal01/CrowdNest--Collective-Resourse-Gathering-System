@@ -39,37 +39,42 @@ def index():
 def register():
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'message': 'No data provided'}), 400
-            
-        required_fields = ['username', 'password', 'email', 'location']
+
+        required_fields = ['username', 'password', 'email', 'state', 'city']
         if not all(field in data for field in required_fields):
             return jsonify({
                 'message': 'Missing required fields',
                 'required': required_fields
             }), 400
-            
-        # Validate data
+
+        # Validate inputs
         if len(data['username']) < 3:
             return jsonify({'message': 'Username must be at least 3 characters long'}), 400
         if len(data['password']) < 6:
             return jsonify({'message': 'Password must be at least 6 characters long'}), 400
         if '@' not in data['email']:
             return jsonify({'message': 'Invalid email format'}), 400
-            
-        # Create user
-        if db.create_user(data['username'], data['password'], data['email'], data['location']):
+
+        # Combine state and city into location
+        location = f"{data['city']}, {data['state']}"
+
+        # Create user in database
+        success = db.create_user(data['username'], data['password'], data['email'], location)
+        if success:
             return jsonify({
                 'message': 'User created successfully',
                 'username': data['username']
             }), 201
         else:
             return jsonify({'message': 'Username or email already exists'}), 409
-            
+
     except Exception as e:
         print(f"Registration error: {str(e)}")
         return jsonify({'message': 'Internal server error'}), 500
+
 
 @app.route('/api/login', methods=['POST'])
 def login():

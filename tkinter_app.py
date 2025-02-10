@@ -12,102 +12,79 @@ from flask_routes import app  # Import the Flask app with routes
 
 # Modern Color scheme
 COLORS = {
-    'primary': '#6C63FF',        # Modern Purple
-    'primary_dark': '#5A52E0',   # Darker Purple
-    'secondary': '#FF6B6B',      # Coral
-    'accent': '#4ECDC4',         # Turquoise
-    'success': '#2ECC71',        # Emerald Green
-    'warning': '#F1C40F',        # Sunflower Yellow
-    'error': '#E74C3C',          # Alizarin Red
-    'text': '#2C3E50',           # Dark Blue Gray
-    'text_light': '#7F8C8D',     # Light Gray
-    'background': '#F8F9FA',     # Light Background
-    'card': '#FFFFFF',           # White
-    'border': '#E9ECEF'          # Light Border
+    'primary': '#0077B6',        # Deep Ocean Blue
+    'primary_dark': '#023E8A',   # Darker Blue
+    'secondary': '#F77F00',      # Warm Sunset Orange
+    'accent': '#00B4D8',         # Vibrant Teal
+    'success': '#38A3A5',        # Calming Green
+    'warning': '#FFBA08',        # Golden Yellow
+    'error': '#D62828',          # Rich Red
+    'text': '#1B1B1E',           # Dark Charcoal
+    'text_light': '#6C757D',     # Muted Gray
+    'background': '#F1F3F5',     # Soft Light Gray
+    'card': '#FFFFFF',           # Crisp White
+    'border': '#DEE2E6'          # Subtle Border Gray
 }
 
 # Add these constants after the COLORS dictionary
 LOCATIONS = [
-    "Mumbai",
-    "Delhi",
-    "Bangalore",
-    "Hyderabad",
-    "Chennai",
-    "Kolkata",
-    "Pune",
-    "Ahmedabad",
-    "Jaipur",
-    "Surat"
+    "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune",
+    "Ahmedabad", "Jaipur", "Surat", "Lucknow", "Kanpur", "Nagpur", "Indore",
+    "Thane", "Bhopal", "Visakhapatnam", "Vadodara", "Ghaziabad", "Ludhiana",
+    "Patna", "Agra", "Nashik", "Faridabad", "Meerut", "Rajkot", "Varanasi",
+    "Srinagar", "Aurangabad", "Dhanbad"
 ]
 
 CONDITIONS = [
-    "New",
-    "Like New",
-    "Very Good",
-    "Good",
-    "Acceptable"
+    "New", "Like New", "Very Good", "Good", "Acceptable"
 ]
 
 CATEGORIES = [
-    "Clothing",
-    "Electronics",
-    "Books",
-    "Furniture",
-    "Home & Kitchen",
-    "Sports & Fitness",
-    "Toys & Games",
-    "School Supplies",
-    "Medical Supplies",
-    "Other"
+    "Clothing", "Electronics", "Books", "Furniture", "Home & Kitchen",
+    "Sports & Fitness", "Toys & Games", "School Supplies", "Medical Supplies",
+    "Automobiles", "Music Instruments", "Beauty & Personal Care", "Other"
 ]
 
-# Location data structure
 STATES = [
-    "Andhra Pradesh",
-    "Arunachal Pradesh",
-    "Assam",
-    "Bihar",
-    "Chhattisgarh",
-    "Goa",
-    "Gujarat",
-    "Haryana",
-    "Himachal Pradesh",
-    "Jharkhand",
-    "Karnataka",
-    "Kerala",
-    "Madhya Pradesh",
-    "Maharashtra",
-    "Manipur",
-    "Meghalaya",
-    "Mizoram",
-    "Nagaland",
-    "Odisha",
-    "Punjab",
-    "Rajasthan",
-    "Sikkim",
-    "Tamil Nadu",
-    "Telangana",
-    "Tripura",
-    "Uttar Pradesh",
-    "Uttarakhand",
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+    "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
+    "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim",
+    "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand",
     "West Bengal"
 ]
-
 # Major cities by state
 CITIES_BY_STATE = {
     "Andhra Pradesh": ["Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Kurnool", "Kakinada"],
+    "Arunachal Pradesh": ["Itanagar", "Naharlagun", "Tawang", "Pasighat", "Roing", "Ziro"],
+    "Assam": ["Guwahati", "Dibrugarh", "Silchar", "Jorhat", "Tezpur", "Nagaon"],
+    "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga"],
+    "Chhattisgarh": ["Raipur", "Bhilai", "Bilaspur", "Korba", "Durg", "Rajnandgaon"],
+    "Goa": ["Panaji", "Vasco da Gama", "Margao", "Mapusa", "Ponda", "Bicholim"],
     "Gujarat": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar"],
+    "Haryana": ["Chandigarh", "Faridabad", "Gurugram", "Ambala", "Panipat", "Hisar"],
+    "Himachal Pradesh": ["Shimla", "Manali", "Dharamshala", "Solan", "Mandi", "Bilaspur"],
+    "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Hazaribagh", "Deoghar"],
     "Karnataka": ["Bangalore", "Mysore", "Hubli", "Mangalore", "Belgaum", "Gulbarga"],
     "Kerala": ["Thiruvananthapuram", "Kochi", "Kozhikode", "Thrissur", "Malappuram", "Kannur"],
     "Madhya Pradesh": ["Bhopal", "Indore", "Jabalpur", "Gwalior", "Ujjain", "Sagar"],
     "Maharashtra": ["Mumbai", "Pune", "Nagpur", "Thane", "Nashik", "Aurangabad"],
+    "Manipur": ["Imphal", "Thoubal", "Bishnupur", "Churachandpur", "Senapati", "Ukhrul"],
+    "Meghalaya": ["Shillong", "Tura", "Jowai", "Nongstoin", "Baghmara", "Williamnagar"],
+    "Mizoram": ["Aizawl", "Lunglei", "Champhai", "Serchhip", "Kolasib", "Saiha"],
+    "Nagaland": ["Kohima", "Dimapur", "Mokokchung", "Tuensang", "Wokha", "Zunheboto"],
+    "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Sambalpur", "Brahmapur", "Balasore"],
     "Punjab": ["Ludhiana", "Amritsar", "Jalandhar", "Patiala", "Bathinda", "Mohali"],
     "Rajasthan": ["Jaipur", "Jodhpur", "Udaipur", "Kota", "Bikaner", "Ajmer"],
+    "Sikkim": ["Gangtok", "Namchi", "Gyalshing", "Mangan", "Jorethang", "Rangpo"],
     "Tamil Nadu": ["Chennai", "Coimbatore", "Madurai", "Salem", "Tiruchirappalli", "Tiruppur"],
     "Telangana": ["Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Khammam", "Ramagundam"],
+    "Tripura": ["Agartala", "Udaipur", "Dharmanagar", "Kailashahar", "Ambassa", "Belonia"],
     "Uttar Pradesh": ["Lucknow", "Kanpur", "Varanasi", "Agra", "Meerut", "Prayagraj"],
+    "Uttarakhand": ["Dehradun", "Haridwar", "Rishikesh", "Haldwani", "Nainital", "Rudrapur"],
     "West Bengal": ["Kolkata", "Howrah", "Durgapur", "Asansol", "Siliguri", "Bardhaman"]
 }
+
     
 class NavigationPane:
     def __init__(self, parent, show_frame_callback):
@@ -178,33 +155,40 @@ class NavigationPane:
 class ModernUI:
     @staticmethod
     def create_scrollable_frame(parent):
-        # Create a canvas with scrollbars
+        # Create a canvas with vertical and horizontal scrollbars
         canvas = tk.Canvas(parent, bg=COLORS['card'], highlightthickness=0)
         scrollbar_y = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         scrollbar_x = ttk.Scrollbar(parent, orient="horizontal", command=canvas.xview)
-        
+
         # Create a frame inside the canvas
         scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
         
-        # Configure the canvas
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        # Update the scroll region when the frame changes size
+        def update_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        scrollable_frame.bind("<Configure>", update_scroll_region)
+
+        # Attach the frame to the canvas
+        frame_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        # Configure scrolling
         canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-        
-        # Pack the scrollbars and canvas
+
+        # Pack scrollbars and canvas
         scrollbar_y.pack(side="right", fill="y")
         scrollbar_x.pack(side="bottom", fill="x")
         canvas.pack(side="left", fill="both", expand=True)
-        
-        return scrollable_frame, canvas
 
-    def _on_mousewheel(self, event, canvas):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        # In the create_scrollable_frame method:
-        canvas.bind_all("<MouseWheel>", lambda e: self._on_mousewheel(e, canvas))
+    # Enable scrolling with the mouse wheel
+        def _on_mousewheel(event):
+            canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)  # For Windows
+        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # For Linux (scroll up)
+        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))   # For Linux (scroll down)
+
+        return scrollable_frame, canvas
 
     @staticmethod
     def create_header(parent):
@@ -387,7 +371,7 @@ class CrowdNestApp:
         self.root.title("CrowdNest")
         self.root.geometry("1200x800")
         self.root.configure(bg=COLORS['background'])
-        
+        self.root.state("zoomed")
         # Initialize session data
         self.token = None
         self.current_user = None
@@ -459,10 +443,10 @@ class CrowdNestApp:
         
         self.frames['login'] = frame
     def check_password_strength(self, event=None):
-        password = self.register_entries['Password:'].get()
+        password = self.register_entries["Password"].get()
         strength = 0
 
-        # Criteria for password strength
+        # Password Strength Criteria
         if len(password) >= 8:
             strength += 1
         if any(char.isdigit() for char in password):
@@ -474,78 +458,125 @@ class CrowdNestApp:
         if any(char in "!@#$%^&*()-_=+[]{}|;:,.<>?/" for char in password):
             strength += 1
 
-        # Update the password strength label
+        # Update UI Based on Strength Level
         if strength == 0:
-            self.password_strength_label.config(text="Weak", foreground=COLORS['error'])
-        elif strength <= 2:
-            self.password_strength_label.config(text="Moderate", foreground=COLORS['warning'])
+            self.password_strength_label.config(text="Password Strength: Very Weak", foreground="red")
+        elif strength == 1 or strength == 2:
+            self.password_strength_label.config(text="Password Strength: Weak", foreground="orange")
+        elif strength == 3:
+            self.password_strength_label.config(text="Password Strength: Moderate", foreground="blue")
+        elif strength == 4:
+            self.password_strength_label.config(text="Password Strength: Strong", foreground="green")
         else:
-            self.password_strength_label.config(text="Strong", foreground=COLORS['success'])
+            self.password_strength_label.config(text="Password Strength: Very Strong", foreground="darkgreen")
 
     def create_register_frame(self):
-        frame = ModernUI.create_card(self.content_frame)
-        
-        # Center content
-        content = ttk.Frame(frame, style='Card.TFrame')
-        content.place(relx=0.5, rely=0.5, anchor='center')
+        # Create a main frame inside content_frame
+        frame = ModernUI.create_card(self.content_frame, padding=(40, 40))
 
-        # Header Section
-        header_frame = ttk.Frame(content, style='Card.TFrame')
-        header_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(header_frame, text="🎁", font=('Segoe UI', 48), foreground=COLORS['primary']).pack()
-        ttk.Label(header_frame, text="Create Account", style='Title.TLabel').pack()
-        ttk.Label(header_frame, text="Join our community and start sharing!", style='Subtitle.TLabel').pack()
+        # Create a canvas for scrollability
+        canvas = tk.Canvas(frame, bg=COLORS['card'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
 
-        # Registration Form
+        # Create a scrollable frame inside the canvas
+        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
+
+        # Attach the scrollable frame to the canvas (set a default width to prevent shifting)
+        frame_window = canvas.create_window(0, 0, window=scrollable_frame, anchor="n", width=500)
+
+        def update_window_position():
+            """ Ensure content is centered properly on initial load and when resized. """
+            canvas.itemconfig(frame_window, width=canvas.winfo_width())
+
+        # Delay to ensure Tkinter has rendered everything before centering
+        canvas.after(200, update_window_position)
+        canvas.bind("<Configure>", lambda event: update_window_position())
+
+        def update_scroll_region(event):
+            """ Adjust scroll region dynamically. """
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        scrollable_frame.bind("<Configure>", update_scroll_region)
+
+        def _on_mouse_wheel(event):
+            """ Enable smooth scrolling using mouse wheel. """
+            if event.num == 5 or event.delta == -120:  # Scroll Down (Linux & Windows)
+                canvas.yview_scroll(1, "units")
+            elif event.num == 4 or event.delta == 120:  # Scroll Up (Linux & Windows)
+                canvas.yview_scroll(-1, "units")
+
+        # Bind mouse scrolling
+        canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
+        canvas.bind_all("<Button-4>", _on_mouse_wheel)   # Linux Scroll Up
+        canvas.bind_all("<Button-5>", _on_mouse_wheel)   # Linux Scroll Down
+
+        # Configure canvas and scrollbar
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # WRAPPER FRAME (Expands fully to center content)
+        wrapper_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        wrapper_frame.pack(fill='both', expand=True)  # Ensures no shifting
+
+        # CONTENT FRAME (Holds form elements)
+        content = ttk.Frame(wrapper_frame, style='Card.TFrame')
+        content.pack(pady=40, padx=20, anchor="center")  # Keep spacing & center
+
+        # HEADER SECTION
+        ttk.Label(content, text="🎁", font=('Poppins', 40), foreground=COLORS['primary']).pack(anchor="center")
+        ttk.Label(content, text="Create Account", font=('Poppins', 20, 'bold'), foreground=COLORS['text']).pack(pady=(5, 2), anchor="center")
+        ttk.Label(content, text="Join our community and start sharing!", font=('Poppins', 12), foreground=COLORS['text_light']).pack(anchor="center")
+
+        # REGISTRATION FORM
         self.register_entries = {}
 
-        # Username Field
-        username_frame = ttk.Frame(content, style='Card.TFrame')
-        username_frame.pack(fill='x', pady=(0, 10))
-        ttk.Label(username_frame, text="👤 Username", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Username:'] = ModernUI.create_entry(username_frame, placeholder="Enter your username", width=40)
-        self.register_entries['Username:'].pack(pady=(5, 0))
+        form_fields = [
+            ("👤 Username", "Username", "Enter your username"),
+            ("📧 Email", "Email", "Enter your email"),
+            ("🔒 Password", "Password", "Enter your password", "•"),
+            ("🔒 Confirm Password", "Confirm Password", "Re-enter your password", "•")
+        ]
 
-        # Email Field
-        email_frame = ttk.Frame(content, style='Card.TFrame')
-        email_frame.pack(fill='x', pady=(0, 10))
-        ttk.Label(email_frame, text="📧 Email", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Email:'] = ModernUI.create_entry(email_frame, placeholder="Enter your email", width=40)
-        self.register_entries['Email:'].pack(pady=(5, 0))
+        for label_text, dict_key, placeholder, *password_mode in form_fields:
+            field_frame = ttk.Frame(content, style='Card.TFrame')
+            field_frame.pack(fill='x', pady=(8, 10), padx=40)
 
-        # Password Fields
-        password_frame = ttk.Frame(content, style='Card.TFrame')
-        password_frame.pack(fill='x', pady=(0, 10))
-        ttk.Label(password_frame, text="🔒 Password", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Password:'] = ModernUI.create_entry(password_frame, show="•", placeholder="Enter your password", width=40)
-        self.register_entries['Password:'].pack(pady=(5, 0))
+            ttk.Label(field_frame, text=label_text, font=('Poppins', 11, 'bold'), foreground=COLORS['text']).pack(anchor='w')
 
-        confirm_password_frame = ttk.Frame(content, style='Card.TFrame')
-        confirm_password_frame.pack(fill='x', pady=(0, 10))
-        ttk.Label(confirm_password_frame, text="🔒 Confirm Password", style='Subtitle.TLabel').pack(anchor='w')
-        self.register_entries['Confirm Password:'] = ModernUI.create_entry(confirm_password_frame, show="•", placeholder="Re-enter your password", width=40)
-        self.register_entries['Confirm Password:'].pack(pady=(5, 0))
+            show_char = password_mode[0] if password_mode else None
+            entry = ModernUI.create_entry(field_frame, placeholder=placeholder, show=show_char, width=40)
+            entry.pack(pady=(5, 0), ipadx=5, ipady=10)
 
-        # Password Strength Indicator
-        self.password_strength_label = ttk.Label(password_frame, text="", style='Subtitle.TLabel', foreground=COLORS['text_light'])
-        self.password_strength_label.pack(anchor='w', pady=(5, 0))
-        self.register_entries['Password:'].bind('<KeyRelease>', self.check_password_strength)
+            # ✅ Store the correct key
+            self.register_entries[dict_key] = entry 
+            # Password Strength Indicator
+            if label_text == "Password":
+                self.password_strength_label = ttk.Label(field_frame, text="Password Strength: Weak", font=('Poppins', 10), foreground="red")
+                self.password_strength_label.pack(anchor='w', pady=(5, 10))
+                entry.bind('<KeyRelease>', self.check_password_strength)
 
-        # Location Selector
+        # LOCATION SELECTOR
+        ttk.Label(content, text="📍 Location", font=('Poppins', 11, 'bold'), foreground=COLORS['text']).pack(anchor='center', padx=20)
         location_selector = ModernUI.create_location_selector(content, self.state_var, self.city_var)
-        location_selector.pack(fill='x', pady=(0, 20))
+        location_selector.pack(fill='x', pady=(5, 20), padx=40)
 
-        # Store the location variables
-        self.register_entries['State:'] = self.state_var
-        self.register_entries['City:'] = self.city_var
+        # Store location variables
+        
+        self.register_entries['State'] = self.state_var
+        self.register_entries['City'] = self.city_var
 
-        # Action Buttons
+        # BUTTONS
         button_frame = ttk.Frame(content, style='Card.TFrame')
-        button_frame.pack(fill='x', pady=20)
-        ModernUI.create_button(button_frame, "Create Account", self.register, width=20).pack(side='left', padx=5)
-        ModernUI.create_button(button_frame, "Back to Login", lambda: self.show_frame('login'), style='Secondary.TButton', width=20).pack(side='right', padx=5)
+        button_frame.pack(fill='x', pady=20, padx=40)
 
-        self.frames['register'] = frame
+        ModernUI.create_button(button_frame, "✅ Create Account", self.register, width=25).pack(side='left', padx=5, pady=5)
+        ModernUI.create_button(button_frame, "🔙 Back to Login", lambda: self.show_frame('login'), style='Secondary.TButton', width=25).pack(side='right', padx=5, pady=5)
+
+        self.frames['register'] = frame  # Store reference to frame
+
+
+
 
     def create_dashboard_frame(self):
         frame = ModernUI.create_card(self.content_frame)
@@ -1022,54 +1053,54 @@ class CrowdNestApp:
             
     def register(self):
         data = {
-            'username': self.register_entries['Username:'].get(),
-            'email': self.register_entries['Email:'].get(),
-            'password': self.register_entries['Password:'].get(),
+            'username': self.register_entries['Username'].get(),
+            'email': self.register_entries['Email'].get(),
+            'password': self.register_entries['Password'].get(),
             'state': self.state_var.get(),
             'city': self.city_var.get()
         }
-        
+
         # Basic validation
         if not all(data.values()) or data['state'] == "Select State" or data['city'] == "Select City":
             messagebox.showerror("Error", "All fields are required")
             return
-            
-        # Combine state and city for location
-        data['location'] = f"{data['city']}, {data['state']}"
-        
-        # Remove state and city from data before sending
-        del data['state']
-        del data['city']
-        
-        if data['password'] != self.register_entries['Confirm Password:'].get():
+
+        if data['password'] != self.register_entries['Confirm Password'].get():
             messagebox.showerror("Error", "Passwords do not match")
             return
-            
+
         if len(data['password']) < 6:
             messagebox.showerror("Error", "Password must be at least 6 characters long")
             return
-            
+
         if len(data['username']) < 3:
             messagebox.showerror("Error", "Username must be at least 3 characters long")
             return
-            
+
         if '@' not in data['email']:
             messagebox.showerror("Error", "Invalid email format")
             return
-            
+
         try:
             response = self.api_request('POST', 'register', data)
-            
+
             if response:
                 messagebox.showinfo("Success", "Registration successful! Please login.")
                 self.show_frame('login')
-                
-                # Clear the form
+
+                # Clear form
                 for entry in self.register_entries.values():
-                    entry.delete(0, tk.END)
+                    if isinstance(entry, tk.Entry):  # ✅ Only delete from Entry widgets
+                        entry.delete(0, tk.END)
+
+                self.state_var.set("Select State")  # ✅ Reset dropdowns properly
+                self.city_var.set("Select City")  # ✅ Reset dropdowns properly
+
+
         except Exception as e:
             messagebox.showerror("Error", f"Registration failed: {str(e)}")
             print(f"Registration error: {str(e)}")
+
             
     def submit_donation(self):
         # Basic validation
@@ -1147,6 +1178,8 @@ class CrowdNestApp:
         search_term = self.search_entry.get()
         donations = self.api_request('GET', 'donations', params={'search': search_term})
         
+        print(f"Fetched donations: {donations}")  # Debugging output
+        
         if donations:
             self.donations_tree.delete(*self.donations_tree.get_children())
             
@@ -1157,6 +1190,7 @@ class CrowdNestApp:
                     donation['condition'],
                     donation['location']
                 ))
+
                 
     def send_message(self):
         if not hasattr(self, 'selected_contact'):
