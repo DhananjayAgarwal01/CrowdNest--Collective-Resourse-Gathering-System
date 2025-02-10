@@ -10,7 +10,7 @@ DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
     'password': 'Dhananjay@007',
-    'database': 'donateshare'
+    'database': 'CrowdNest'
 }
 
 class DatabaseHandler:

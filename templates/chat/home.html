@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Home - DonateShare{% endblock %}
+{% block title %}Home - CrowdNest{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -10,7 +10,7 @@
         <div class="col-lg-8">
             <div class="card shadow-sm">
                 <div class="card-body">
-                    <h2 class="mb-3">Welcome to DonateShare</h2>
+                    <h2 class="mb-3">Welcome to CrowdNest</h2>
                     <p class="lead mb-4">Share items you no longer need with those who could use them.</p>
                     {% if user.is_authenticated %}
                         {% if user_profile.user_type == 'DONOR' %}

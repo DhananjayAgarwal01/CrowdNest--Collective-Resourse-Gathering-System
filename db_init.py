@@ -6,7 +6,7 @@ DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
     'password': 'Dhananjay@007', # Change this to the root password for your device
-    'database': 'donateshare'
+    'database': 'CrowdNest'
 }
 
 def init_database():

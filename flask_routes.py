@@ -33,7 +33,7 @@ def token_required(f):
 
 @app.route('/')
 def index():
-    return jsonify({'message': 'DonateShare API is running'})
+    return jsonify({'message': 'CrowdNest API is running'})
 
 @app.route('/api/register', methods=['POST'])
 def register():

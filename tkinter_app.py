@@ -129,7 +129,7 @@ class NavigationPane:
                  background=COLORS['primary'],
                  foreground='white').pack()
         ttk.Label(logo_frame, 
-                 text="DonateShare", 
+                 text="CrowdNest", 
                  font=('Segoe UI', 16, 'bold'),
                  background=COLORS['primary'],
                  foreground='white').pack()
@@ -212,7 +212,7 @@ class ModernUI:
         header.pack(fill='x', side='top')
         
         # App title
-        title = ttk.Label(header, text="DonateShare", style='HeaderTitle.TLabel')
+        title = ttk.Label(header, text="CrowdNest", style='HeaderTitle.TLabel')
         title.pack(side='left', padx=20, pady=10)
         
         return header
@@ -381,10 +381,10 @@ class CustomStyle:
             selectbackground=[('readonly', COLORS['primary'])]
         )
 
-class DonateShareApp:
+class CrowdNestApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("DonateShare")
+        self.root.title("CrowdNest")
         self.root.geometry("1200x800")
         self.root.configure(bg=COLORS['background'])
         
@@ -1470,5 +1470,5 @@ if __name__ == "__main__":
     
     # Create and run Tkinter app
     root = tk.Tk()
-    app = DonateShareApp(root)
+    app = CrowdNestApp(root)
     root.mainloop() 

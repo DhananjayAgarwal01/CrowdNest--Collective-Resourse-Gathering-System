@@ -1,4 +1,4 @@
-# DonateShare - Item Donation Platform
+# CrowdNest - Item Donation Platform
 
 A desktop application built with Python, Tkinter, and Flask that allows users to donate and request items, chat with other users, and manage their donations.
 
@@ -22,7 +22,7 @@ A desktop application built with Python, Tkinter, and Flask that allows users to
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd donateshare
+cd CrowdNest
 ```
 
 2. Create a virtual environment and activate it:
@@ -46,7 +46,7 @@ pip install -r requirements.txt
        'host': 'localhost',
        'user': 'your_mysql_username',
        'password': 'your_mysql_password',
-       'database': 'donateshare'
+       'database': 'CrowdNest'
    }
    ```
    - Open `flask_routes.py` and update the `SECRET_KEY` with a secure key:
