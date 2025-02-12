@@ -1,9 +1,13 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from database_handler import DatabaseHandler
 from PIL import Image, ImageTk
-import os
+import os, io
 from datetime import datetime
+import uuid
+import socket
+import json
+import threading
 
 # Modern Color scheme
 COLORS = {
@@ -272,7 +276,7 @@ class ModernUI:
         # Update city dropdown when state changes
         def update_cities(*args):
             selected_state = state_var.get()
-            if selected_state in CITIES_BY_STATE:
+            if (selected_state in CITIES_BY_STATE):
                 cities = CITIES_BY_STATE[selected_state]
                 city_dropdown['values'] = cities
                 city_dropdown.set("Select City")
@@ -361,54 +365,64 @@ class CustomStyle:
         )
 
 class CrowdNestApp:
-    def __init__(self, root):  # ✅ Corrected
+    def __init__(self, root):
         self.root = root
         self.root.title("CrowdNest")
         self.root.state('zoomed')
         
-        # Initialize database handler
         self.db = DatabaseHandler()
-        
-        # Initialize current user
         self.current_user = None
+        self.chat_socket = None
+        self.selected_chat_user = None
+        self.selected_image_path = None
         
-        # Initialize dictionaries
+        # Initialize UI variables
+        self.init_variables()
+        
+        # Configure styles
+        CustomStyle.configure_styles()
+        
+        # Create main container and frames
+        self.setup_main_container()
+        self.create_frames()
+        
+        # Show login frame
+        self.show_frame('login')
+    
+    def init_variables(self):
+        """Initialize all UI variables in one place"""
         self.profile_labels = {}
         self.profile_entries = {}
         self.donation_entries = {}
         
-        # Initialize location variables
+        # StringVars
         self.reg_state_var = tk.StringVar()
         self.reg_city_var = tk.StringVar()
         self.donation_state_var = tk.StringVar()
         self.donation_city_var = tk.StringVar()
         self.profile_state_var = tk.StringVar()
         self.profile_city_var = tk.StringVar()
-        
-        # Initialize filter variables
         self.category_filter = tk.StringVar()
         self.condition_filter = tk.StringVar()
         self.location_filter = tk.StringVar()
-        
-        # Configure styles
-        CustomStyle.configure_styles()
-        
-        # Create main container
-        self.container = ttk.Frame(root)
+        self.donation_title = tk.StringVar()
+        self.donation_description = tk.StringVar()
+        self.donation_category_var = tk.StringVar()
+        self.donation_condition_var = tk.StringVar()
+    
+    def setup_main_container(self):
+        """Setup the main container and navigation"""
+        self.container = ttk.Frame(self.root)
         self.container.pack(fill='both', expand=True)
         
-        # Create frames dictionary
-        self.frames = {}
-        
-        # Create and show login frame
         self.content_frame = ttk.Frame(self.container, style='Content.TFrame')
         self.content_frame.pack(fill='both', expand=True, side='right')
         
-        # Create navigation pane (initially hidden)
         self.nav_pane = NavigationPane(self.container, self.show_frame)
-        
-        
-        # Create all frames
+    
+    def create_frames(self):
+        """Create all application frames"""
+        self.frames = {}
         self.create_login_frame()
         self.create_register_frame()
         self.create_dashboard_frame()
@@ -416,9 +430,6 @@ class CrowdNestApp:
         self.create_donation_list_frame()
         self.create_chat_frame()
         self.create_profile_frame()
-        
-        # Show login frame
-        self.show_frame('login')
 
     def login(self):
         username = self.login_username.get()
@@ -430,6 +441,7 @@ class CrowdNestApp:
             self.nav_pane.pack(fill='y', side='left')
             self.show_frame('dashboard')
             self.update_dashboard()
+            self.connect_to_chat_server()
         else:
             messagebox.showerror("Error", "Invalid credentials")
 
@@ -474,35 +486,100 @@ class CrowdNestApp:
 
     def submit_donation(self):
         # Get form data
-        title = self.donation_title.get()
-        description = self.donation_description.get("1.0", "end-1c")
-        category = self.donation_category_var.get()
-        condition = self.donation_condition_var.get()
+        title = self.donation_entries['Title:'].get()
+        description = self.donation_entries['Description:'].get("1.0", "end-1c")
+        category = self.donation_entries['Category:'].get()
+        condition = self.donation_entries['Condition:'].get()
         state = self.donation_state_var.get()
         city = self.donation_city_var.get()
         
         # Validate inputs
         if not all([title, description, category, condition, state, city]):
-            messagebox.showerror("Error", "All fields are required")
+            messagebox.showerror("Error", "All fields except image are required")
             return
             
+        # Process image if selected
+        image_data = None
+        if self.selected_image_path:
+            try:
+                with open(self.selected_image_path, 'rb') as img_file:
+                    image_data = img_file.read()
+            except Exception as e:
+                messagebox.showwarning("Warning", f"Could not process image: {e}")
+        
         # Combine state and city
         location = f"{city}, {state}"
         
         # Create donation
-        if self.db.create_donation(
+        success, message = self.db.create_donation(
             self.current_user['unique_id'],
             title,
             description,
             category,
             condition,
             location,
-            None  # image_path
-        ):
-            messagebox.showinfo("Success", "Donation created successfully!")
+            image_data
+        )
+        
+        if success:
+            messagebox.showinfo("Success", message)
             self.show_frame('donation_list')
         else:
-            messagebox.showerror("Error", "Failed to create donation")
+            messagebox.showerror("Error", message)
+
+    def choose_image(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Image",
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"),
+                ("All files", "*.*")
+            ]
+        )
+        if file_path:
+            try:
+                # Create images directory if it doesn't exist
+                image_dir = "donation_images"
+                if not os.path.exists(image_dir):
+                    os.makedirs(image_dir)
+                
+                # Copy image to application directory with unique name
+                file_ext = os.path.splitext(file_path)[1]
+                new_filename = f"donation_{uuid.uuid4()}{file_ext}"
+                new_path = os.path.join(image_dir, new_filename)
+                
+                # Copy and resize image
+                with Image.open(file_path) as img:
+                    # Resize image while maintaining aspect ratio
+                    max_size = (800, 800)
+                    img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                    img.save(new_path)
+                
+                self.selected_image_path = new_path
+                messagebox.showinfo("Success", "Image uploaded successfully!")
+                
+                # Update image preview if it exists
+                if hasattr(self, 'image_preview_label'):
+                    self.update_image_preview()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to process image: {str(e)}")
+                self.selected_image_path = None
+
+    def update_image_preview(self):
+        if self.selected_image_path and os.path.exists(self.selected_image_path):
+            try:
+                # Load and resize image for preview
+                with Image.open(self.selected_image_path) as img:
+                    # Resize image for preview
+                    preview_size = (200, 200)
+                    img.thumbnail(preview_size, Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    # Update preview label
+                    self.image_preview_label.configure(image=photo)
+                    self.image_preview_label.image = photo  # Keep a reference
+            except Exception as e:
+                print(f"Error updating preview: {e}")
 
     def search_donations(self):
         search_term = self.search_entry.get()
@@ -510,36 +587,70 @@ class CrowdNestApp:
         self.update_donation_list(donations)
 
     def send_message(self):
-        if not self.message_entry.get():
+        if not self.message_entry.get() or not self.selected_chat_user:
             return
             
-        if self.db.send_message(
+        content = self.message_entry.get()
+        
+        # Send via socket for real-time chat
+        try:
+            message_data = json.dumps({
+                'receiver_id': self.selected_chat_user['unique_id'],
+                'content': content
+            })
+            self.chat_socket.send(message_data.encode())
+        except:
+            messagebox.showerror("Error", "Failed to send message")
+            return
+            
+        # Store in database
+        self.db.send_message(
             self.current_user['unique_id'],
             self.selected_chat_user['unique_id'],
-            self.message_entry.get()
-        ):
-            self.message_entry.delete(0, 'end')
-            self.update_chat_messages()
-        else:
-            messagebox.showerror("Error", "Failed to send message")
+            content
+        )
+        
+        self.message_entry.delete(0, 'end')
+        self.add_message_to_chat(self.current_user['unique_id'], content)
 
     def save_profile_changes(self):
-        email = self.profile_email.get()
+        """Save profile changes to database"""
+        # Get values from profile entries
+        email = self.profile_entries['Email:'].get()
         state = self.profile_state_var.get()
         city = self.profile_city_var.get()
+        
+        # Validate inputs
+        if not email:
+            messagebox.showerror("Error", "Email is required")
+            return
+            
+        if not state or not city or state == "Select State" or city == "Select City":
+            messagebox.showerror("Error", "Please select your location")
+            return
+            
+        # Validate email format
+        if not self.validate_email(email):
+            messagebox.showerror("Error", "Invalid email format")
+            return
+        
+        # Combine location
         location = f"{city}, {state}"
         
-        if self.db.update_profile(
+        # Update profile in database
+        success, message = self.db.update_profile(
             self.current_user['unique_id'],
             email=email,
             location=location
-        ):
+        )
+        
+        if success:
             messagebox.showinfo("Success", "Profile updated successfully!")
             self.current_user['email'] = email
             self.current_user['location'] = location
             self.update_profile_display()
         else:
-            messagebox.showerror("Error", "Failed to update profile")
+            messagebox.showerror("Error", message)
 
     def show_frame(self, frame_name):
         # Hide all frames
@@ -715,6 +826,75 @@ class CrowdNestApp:
 
         self.frames['register'] = frame
 
+    def check_password_strength(self, event):
+        """Check password strength and update indicator"""
+        password = self.reg_entries["Password"].get()
+        
+        # Initialize strength score
+        strength = 0
+        feedback = []
+        
+        # Length check
+        if len(password) >= 8:
+            strength += 1
+        else:
+            feedback.append("Length should be at least 8 characters")
+            
+        # Check for uppercase
+        if any(c.isupper() for c in password):
+            strength += 1
+        else:
+            feedback.append("Should contain uppercase letters")
+            
+        # Check for lowercase
+        if any(c.islower() for c in password):
+            strength += 1
+        else:
+            feedback.append("Should contain lowercase letters")
+            
+        # Check for numbers
+        if any(c.isdigit() for c in password):
+            strength += 1
+        else:
+            feedback.append("Should contain numbers")
+            
+        # Check for special characters
+        if any(not c.isalnum() for c in password):
+            strength += 1
+        else:
+            feedback.append("Should contain special characters")
+            
+        # Update strength label
+        if strength == 0:
+            self.password_strength_label.config(
+                text="Password Strength: Very Weak",
+                foreground="red"
+            )
+        elif strength == 1:
+            self.password_strength_label.config(
+                text="Password Strength: Weak",
+                foreground="red"
+            )
+        elif strength == 2:
+            self.password_strength_label.config(
+                text="Password Strength: Fair",
+                foreground="orange"
+            )
+        elif strength == 3:
+            self.password_strength_label.config(
+                text="Password Strength: Good",
+                foreground=COLORS['warning']
+            )
+        elif strength == 4:
+            self.password_strength_label.config(
+                text="Password Strength: Strong",
+                foreground=COLORS['success']
+            )
+        else:
+            self.password_strength_label.config(
+                text="Password Strength: Very Strong",
+                foreground=COLORS['success']
+            )
 
     def create_dashboard_frame(self):
         frame = ModernUI.create_card(self.content_frame)
@@ -811,6 +991,7 @@ class CrowdNestApp:
         title_entry = ModernUI.create_entry(title_frame, width=50)
         title_entry.pack(side='left', pady=(5, 0))
         self.donation_entries['Title:'] = title_entry
+        self.donation_title.set(title_entry.get())
         self.title_counter = ttk.Label(title_frame, text="0/100", style='Subtitle.TLabel')
         self.title_counter.pack(side='left', padx=10)
         title_entry.bind('<KeyRelease>', lambda e: self.update_char_counter(title_entry, self.title_counter, 100))
@@ -823,6 +1004,7 @@ class CrowdNestApp:
         desc_text.configure(font=('Segoe UI', 10), padx=10, pady=5)
         desc_text.pack(side='left', pady=(5, 0))
         self.donation_entries['Description:'] = desc_text
+        self.donation_description.set(desc_text.get("1.0", tk.END).strip())
         self.desc_counter = ttk.Label(desc_frame, text="0/500", style='Subtitle.TLabel')
         self.desc_counter.pack(side='left', padx=10, anchor='n')
         desc_text.bind('<KeyRelease>', lambda e: self.update_char_counter(desc_text, self.desc_counter, 500, is_text=True))
@@ -833,6 +1015,7 @@ class CrowdNestApp:
         ttk.Label(cat_frame, text="📦 Category", style='Subtitle.TLabel').pack(anchor='w')
         self.donation_entries['Category:'] = ModernUI.create_dropdown(cat_frame, CATEGORIES, "Select Category", width=47)
         self.donation_entries['Category:'].pack(pady=(5, 0))
+        self.donation_category_var.set(self.donation_entries['Category:'].get())
         
         # Condition dropdown with icon
         cond_frame = ttk.Frame(content, style='Card.TFrame')
@@ -840,6 +1023,7 @@ class CrowdNestApp:
         ttk.Label(cond_frame, text="✨ Condition", style='Subtitle.TLabel').pack(anchor='w')
         self.donation_entries['Condition:'] = ModernUI.create_dropdown(cond_frame, CONDITIONS, "Select Condition", width=47)
         self.donation_entries['Condition:'].pack(pady=(5, 0))
+        self.donation_condition_var.set(self.donation_entries['Condition:'].get())
         
         # Replace the old location dropdown with new location selector
         loc_frame = ttk.Frame(content, style='Card.TFrame')
@@ -851,11 +1035,27 @@ class CrowdNestApp:
         self.donation_entries['State:'] = self.donation_state_var
         self.donation_entries['City:'] = self.donation_city_var
         
+        # Image upload section
+        img_frame = ttk.Frame(content, style='Card.TFrame')
+        img_frame.pack(fill='x', pady=(0, 20))
+        
+        # Image preview label
+        self.image_preview_label = ttk.Label(img_frame)
+        self.image_preview_label.pack(pady=10)
+        
+        # Image upload button
+        
         # Image upload (placeholder for future implementation)
         img_frame = ttk.Frame(content, style='Card.TFrame')
         img_frame.pack(fill='x', pady=(0, 20))
         ttk.Label(img_frame, text="📸 Upload Images", style='Subtitle.TLabel').pack(anchor='w')
-        ModernUI.create_button(img_frame, "Choose Files", lambda: messagebox.showinfo("Info", "Image upload will be available soon"), style='Secondary.TButton').pack(pady=(5, 0))
+        upload_button = ModernUI.create_button(
+            img_frame, 
+            "📸 Choose Image", 
+            self.choose_image, 
+            style='Secondary.TButton'
+        )
+        upload_button.pack(pady=5)
         
         # Buttons at the bottom
         button_frame = ttk.Frame(content, style='Card.TFrame')
@@ -932,7 +1132,7 @@ class CrowdNestApp:
         list_frame.pack(fill='both', expand=True, padx=40, pady=20)
         
         # Configure Treeview with more columns
-        columns = ('Title', 'Category', 'Condition', 'Location', 'Donor', 'Date')
+        columns = ('Title', 'Category', 'Condition', 'Location', 'Donor', 'Status', 'Date', 'DonorId')
         self.donations_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
         
         # Configure headings and columns
@@ -942,12 +1142,16 @@ class CrowdNestApp:
             'Condition': 100,
             'Location': 150,
             'Donor': 100,
+            'Status': 100,
             'Date': 100
         }
         
         for col, width in column_widths.items():
             self.donations_tree.heading(col, text=col)
             self.donations_tree.column(col, width=width)
+        
+        # Hide the DonorId column
+        self.donations_tree['displaycolumns'] = columns[:-1]
         
         # Add scrollbars
         y_scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.donations_tree.yview)
@@ -972,54 +1176,184 @@ class CrowdNestApp:
                              lambda: self.show_frame('dashboard'), 
                              style='Secondary.TButton', width=20).pack(side='right', padx=5)
         
+        ModernUI.create_button(
+            button_frame,
+            "Track Delivery",
+            self.track_delivery,
+            width=20
+        ).pack(side='left', padx=5)
+        
         self.frames['donation_list'] = frame
 
     def create_chat_frame(self):
         frame = ModernUI.create_card(self.content_frame)
         
-        # Center content
-        content = ttk.Frame(frame, style='Card.TFrame')
-        content.place(relx=0.5, rely=0.5, anchor='center')
+        # Create scrollable main container
+        main_canvas = tk.Canvas(frame, bg=COLORS['card'], highlightthickness=0)
+        main_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = ttk.Frame(main_canvas, style='Card.TFrame')
         
-        ttk.Label(content, text="Messages", style='Title.TLabel').pack()
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
         
-        # Chat container
-        chat_container = ttk.Frame(content, style='Card.TFrame')
-        chat_container.pack(fill=tk.BOTH, expand=True, padx=40, pady=20)
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=main_scrollbar.set)
         
-        # Contacts list
-        contacts_frame = ttk.Frame(chat_container, style='Card.TFrame', width=250)
+        # Pack scrollbar and canvas
+        main_scrollbar.pack(side="right", fill="y")
+        main_canvas.pack(side="left", fill="both", expand=True)
+        
+        # Header
+        header_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        header_frame.pack(fill='x', pady=(20, 30))
+        
+        ttk.Label(header_frame, text="Messages", style='Title.TLabel').pack()
+        ttk.Label(header_frame, text="Chat with donors and recipients", style='Subtitle.TLabel').pack()
+        
+        # Chat container with contacts and messages
+        chat_container = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        chat_container.pack(fill='both', expand=True, padx=40, pady=20)
+        
+        # Contacts section
+        contacts_frame = ttk.Frame(chat_container, style='Card.TFrame', width=300)
         contacts_frame.pack_propagate(False)
-        contacts_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+        contacts_frame.pack(side='left', fill='y', padx=(0, 20))
         
-        ttk.Label(contacts_frame, text="Contacts", style='Subtitle.TLabel').pack(pady=10)
+        # Contacts header
+        ttk.Label(contacts_frame, text="Recent Chats", style='Subtitle.TLabel').pack(pady=10)
         
-        self.contacts_list = ttk.Treeview(contacts_frame, columns=('Contact'), show='headings', height=20)
-        self.contacts_list.heading('Contact', text='Contact')
-        self.contacts_list.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Contacts list with scrollbar
+        contacts_canvas = tk.Canvas(contacts_frame, bg=COLORS['card'], highlightthickness=0)
+        contacts_scrollbar = ttk.Scrollbar(contacts_frame, orient="vertical", command=contacts_canvas.yview)
+        self.contacts_list = ttk.Frame(contacts_canvas, style='Card.TFrame')
+        
+        contacts_canvas.create_window((0, 0), window=self.contacts_list, anchor="nw", width=280)
+        contacts_canvas.configure(yscrollcommand=contacts_scrollbar.set)
+        
+        contacts_scrollbar.pack(side="right", fill="y")
+        contacts_canvas.pack(side="left", fill="both", expand=True)
         
         # Message area
         message_frame = ttk.Frame(chat_container, style='Card.TFrame')
-        message_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        message_frame.pack(side='left', fill='both', expand=True)
         
-        # Messages display
-        self.message_text = tk.Text(message_frame, height=20, wrap=tk.WORD)
+        # Message history with scrollbar
+        history_frame = ttk.Frame(message_frame, style='Card.TFrame')
+        history_frame.pack(fill='both', expand=True)
+        
+        self.message_canvas = tk.Canvas(history_frame, bg=COLORS['card'], highlightthickness=0)
+        message_scrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=self.message_canvas.yview)
+        self.message_text = tk.Text(self.message_canvas, wrap='word', state='disabled')
         self.message_text.configure(font=('Segoe UI', 10), padx=10, pady=10)
-        self.message_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Message input
-        input_frame = ttk.Frame(message_frame)
-        input_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.message_canvas.create_window((0, 0), window=self.message_text, anchor="nw")
+        self.message_canvas.configure(yscrollcommand=message_scrollbar.set)
         
-        self.message_entry = ModernUI.create_entry(input_frame, placeholder="Type your message...", width=40)
-        self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        message_scrollbar.pack(side="right", fill="y")
+        self.message_canvas.pack(side="left", fill="both", expand=True)
         
-        ModernUI.create_button(input_frame, text="Send", command=self.send_message, style='Primary.TButton').pack(side=tk.RIGHT)
+        # Message input area
+        input_frame = ttk.Frame(message_frame, style='Card.TFrame')
+        input_frame.pack(fill='x', pady=10)
         
-        # Back button
-        ModernUI.create_button(content, "Back to Dashboard", lambda: self.show_frame('dashboard'), style='Secondary.TButton', width=40).pack(pady=20)
+        self.message_entry = ModernUI.create_entry(input_frame, "Type your message...", width=50)
+        self.message_entry.pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        ModernUI.create_button(input_frame, "Send", self.send_message).pack(side='right')
         
         self.frames['chat'] = frame
+
+    def update_contacts_list(self):
+        """Update the contacts list with recent conversations"""
+        # Clear existing contacts
+        for widget in self.contacts_list.winfo_children():
+            widget.destroy()
+        
+        # Get conversations
+        conversations = self.db.get_user_conversations(self.current_user['unique_id'])
+        
+        for conv in conversations:
+            contact_frame = ttk.Frame(self.contacts_list, style='Card.TFrame')
+            contact_frame.pack(fill='x', pady=2)
+            
+            # Contact button with handler
+            contact_btn = tk.Button(
+                contact_frame,
+                text=conv['username'],
+                font=('Segoe UI', 10),
+                bg=COLORS['card'],
+                fg=COLORS['text'],
+                anchor='w',
+                padx=10,
+                pady=5,
+                relief='flat',
+                command=lambda u=conv: self.select_contact(u)
+            )
+            contact_btn.pack(fill='x')
+            
+            # Add hover effect
+            contact_btn.bind('<Enter>', lambda e, btn=contact_btn: btn.configure(bg=COLORS['background']))
+            contact_btn.bind('<Leave>', lambda e, btn=contact_btn: btn.configure(bg=COLORS['card']))
+
+    def select_contact(self, user):
+        """Handle contact selection"""
+        self.selected_chat_user = user
+        
+        # Get conversation history
+        messages = self.db.get_conversation_messages(
+            self.current_user['unique_id'],
+            user['unique_id']
+        )
+        
+        # Update message display
+        self.message_text.configure(state='normal')
+        self.message_text.delete('1.0', tk.END)
+        for msg in messages:
+            sender = "You: " if msg['sender_id'] == self.current_user['unique_id'] else f"{msg['sender_name']}: "
+            self.message_text.insert('end', f"{sender}{msg['content']}\n")
+        self.message_text.configure(state='disabled')
+        self.message_text.see('end')
+
+    def contact_donor(self, item=None):
+        """Contact a donor about their donation"""
+        if not item:
+            selection = self.donations_tree.selection()
+            if not selection:
+                messagebox.showwarning("Warning", "Please select a donation first")
+                return
+            item = selection[0]
+        
+        donation = self.donations_tree.item(item)
+        donor_id = donation['values'][7]  # Get donor_id from values
+        
+        # Don't allow contacting yourself
+        if donor_id == self.current_user['unique_id']:
+            messagebox.showwarning("Warning", "This is your own donation")
+            return
+        
+        # Get donor info
+        donor = self.db.get_user_by_id(donor_id)
+        if donor:
+            self.selected_chat_user = donor
+            self.show_frame('chat')
+            self.update_contacts_list()  # Refresh contacts list
+            self.select_contact(donor)  # Show conversation with donor
+        else:
+            messagebox.showerror("Error", "Could not find donor information")
+
+    def update_messages(self):
+        """Update message list and chat area"""
+        if not self.current_user:
+            return
+        
+        self.update_contacts_list()
+        
+        # Clear message area
+        self.message_text.configure(state='normal')
+        self.message_text.delete('1.0', tk.END)
+        self.message_text.configure(state='disabled')
 
     def create_profile_frame(self):
         frame = ModernUI.create_card(self.content_frame)
@@ -1158,18 +1492,18 @@ class CrowdNestApp:
     def preview_donation(self):
         # Get the donation data
         data = {
-            'title': self.donation_entries['Title:'].get(),
-            'description': self.donation_entries['Description:'].get("1.0", tk.END).strip(),
-            'category': self.donation_entries['Category:'].get(),
-            'condition': self.donation_entries['Condition:'].get(),
-            'state': self.donation_state_var.get(),
-            'city': self.donation_city_var.get()
+            'Title': self.donation_entries['Title:'].get(),
+            'Description': self.donation_entries['Description:'].get("1.0", tk.END).strip(),
+            'Category': self.donation_entries['Category:'].get(),
+            'Condition': self.donation_entries['Condition:'].get(),
+            'State': self.donation_state_var.get(),
+            'City': self.donation_city_var.get()
         }
         
         # Create preview window
         preview = tk.Toplevel(self.root)
         preview.title("Preview Donation")
-        preview.geometry("600x400")
+        preview.geometry("600x500")
         preview.configure(bg=COLORS['card'])
         
         # Preview content
@@ -1182,7 +1516,11 @@ class CrowdNestApp:
             if value and value != "Select Category" and value != "Select Condition" and value != "Select State" and value != "Select City":
                 label = key.replace(':', '')
                 ttk.Label(content, text=f"{label}:", style='Subtitle.TLabel').pack(anchor='w')
-                ttk.Label(content, text=value, style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
+                ttk.Label(content, text=value, style='Subtitle.TLabel', wraplength=500, justify='left').pack(anchor='w', pady=(0, 10))
+        
+        # Add a close button
+        close_button = ModernUI.create_button(content, "Close", preview.destroy, style='Secondary.TButton', width=20)
+        close_button.pack(pady=20)
 
     def clear_filters(self):
         self.category_filter.set("Category")
@@ -1195,152 +1533,305 @@ class CrowdNestApp:
     def show_donation_details(self, event):
         item = self.donations_tree.selection()[0]
         donation = self.donations_tree.item(item)
+        values = donation['values']
         
-        # Create details window
         details = tk.Toplevel(self.root)
         details.title("Donation Details")
-        details.geometry("600x400")
+        details.geometry("800x600")
         details.configure(bg=COLORS['card'])
         
-        # Details content
         content = ttk.Frame(details, style='Card.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(content, text="Donation Details", style='Title.TLabel').pack(pady=(0, 20))
+        ttk.Label(content, text=values[0], style='Title.TLabel').pack(pady=(0, 20))
         
-        for col, value in zip(self.donations_tree['columns'], donation['values']):
-            ttk.Label(content, text=f"{col}:", style='Subtitle.TLabel').pack(anchor='w')
-            ttk.Label(content, text=str(value), style='Subtitle.TLabel').pack(anchor='w', pady=(0, 10))
+        # Handle image loading more safely
+        image_data = donation.get('image_data')
+        if image_data:
+            try:
+                # If image_data is bytes, use BytesIO
+                if isinstance(image_data, bytes):
+                    image = Image.open(io.BytesIO(image_data))
+                # If image_data is a file path, open directly
+                elif isinstance(image_data, str) and os.path.exists(image_data):
+                    image = Image.open(image_data)
+                else:
+                    raise ValueError("Invalid image data")
+                    
+                image.thumbnail((400, 400))
+                photo = ImageTk.PhotoImage(image)
+                img_label = ttk.Label(content, image=photo)
+                img_label.image = photo  # Keep reference
+                img_label.pack(pady=10)
+            except Exception as e:
+                print(f"Error displaying image: {e}")
         
+        # Details grid
+        details_frame = ttk.Frame(content, style='Card.TFrame')
+        details_frame.pack(fill='x', pady=20)
+        
+        labels = ['Category:', 'Condition:', 'Location:', 'Donor:', 'Posted:']
+        for i, (label, value) in enumerate(zip(labels, values[1:-1])):
+            row = ttk.Frame(details_frame, style='Card.TFrame')
+            row.pack(fill='x', pady=5)
+            ttk.Label(row, text=label, style='Subtitle.TLabel', width=15).pack(side='left')
+            ttk.Label(row, text=str(value), style='Subtitle.TLabel').pack(side='left', padx=10)
+        
+        # Description
+        desc_frame = ttk.Frame(content, style='Card.TFrame')
+        desc_frame.pack(fill='x', pady=20)
+        ttk.Label(desc_frame, text="Description:", style='Subtitle.TLabel').pack(anchor='w')
+        desc_text = tk.Text(desc_frame, height=4, wrap='word', font=('Segoe UI', 10))
+        desc_text.insert('1.0', donation['description'])
+        desc_text.configure(state='disabled')
+        desc_text.pack(fill='x', pady=5)
+        
+        # Action buttons
         button_frame = ttk.Frame(content, style='Card.TFrame')
         button_frame.pack(fill='x', pady=20)
         
-        ModernUI.create_button(button_frame, "Request Item", lambda: self.request_donation(item), width=20).pack(side='left', padx=5)
-        ModernUI.create_button(button_frame, "Contact Donor", lambda: self.contact_donor(item), width=20).pack(side='left', padx=5)
+        if values[4] != self.current_user['username']:  # Don't show request button for own donations
+            ModernUI.create_button(
+                button_frame, 
+                "Request Item", 
+                lambda: self.request_donation(item),
+                width=20
+            ).pack(side='left', padx=5)
+            
+            ModernUI.create_button(
+                button_frame,
+                "Contact Donor",
+                lambda: self.contact_donor(item),
+                width=20
+            ).pack(side='left', padx=5)
+        
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details.destroy,
+            style='Secondary.TButton',
+            width=20
+        ).pack(side='right', padx=5)
 
-    def request_donation(self, item=None):
-        if not item:
-            selection = self.donations_tree.selection()
-            if not selection:
-                messagebox.showwarning("Warning", "Please select a donation first")
-                return
-            item = selection[0]
+    def request_donation(self, item):
+        donation = self.donations_tree.item(item)
+        values = donation['values']
         
         # Create request window
         request_window = tk.Toplevel(self.root)
-        request_window.title("Request Donation")
-        request_window.geometry("500x400")
+        request_window.title(f"Request: {values[0]}")
+        request_window.geometry("600x500")
         request_window.configure(bg=COLORS['card'])
         
         content = ttk.Frame(request_window, style='Card.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(content, text="Request Item", style='Title.TLabel').pack(pady=(0, 20))
+        # Donation summary
+        ttk.Label(content, text="Request Donation", style='Title.TLabel').pack(pady=(0, 20))
         
-        ttk.Label(content, text="Message to Donor", style='Subtitle.TLabel').pack(anchor='w')
-        message = tk.Text(content, height=6, width=40, wrap='word')
-        message.configure(font=('Segoe UI', 10), padx=10, pady=5)
-        message.pack(pady=10)
+        summary_frame = ttk.Frame(content, style='Card.TFrame')
+        summary_frame.pack(fill='x', pady=10)
         
-        # Add some suggested message templates
+        ttk.Label(summary_frame, text=f"Item: {values[0]}", style='Subtitle.TLabel').pack(anchor='w')
+        ttk.Label(summary_frame, text=f"From: {values[4]}", style='Subtitle.TLabel').pack(anchor='w')
+        
+        # Message input
+        ttk.Label(content, text="Your Message:", style='Subtitle.TLabel').pack(anchor='w', pady=(20, 5))
+        message = tk.Text(content, height=6, width=50, wrap='word')
+        message.configure(font=('Segoe UI', 10))
+        message.pack(pady=5)
+        
+        # Message templates
         templates_frame = ttk.Frame(content, style='Card.TFrame')
         templates_frame.pack(fill='x', pady=10)
         
-        ttk.Label(templates_frame, text="Quick Templates:", style='Subtitle.TLabel').pack(anchor='w')
+        ttk.Label(templates_frame, text="Quick Templates", style='Subtitle.TLabel').pack(anchor='w')
         
         templates = [
             "Hi, I'm interested in your donation. Is it still available?",
-            "Hello, I would like to request this item. When can we arrange pickup?",
-            "Greetings! I really need this item. Can we discuss the details?"
+            "Hello! I would like to request this item. When would be a good time to arrange pickup?",
+            "Greetings! I'm in need of this item. Could we discuss the details?"
         ]
         
         for template in templates:
             ModernUI.create_button(
                 templates_frame,
                 "Use Template",
-                lambda t=template: message.insert('1.0', t),
+                lambda t=template: message.delete('1.0', tk.END) or message.insert('1.0', t),
                 style='Secondary.TButton'
             ).pack(anchor='w', pady=2)
         
         # Submit button
         ModernUI.create_button(
             content,
-            "Submit Request",
-            lambda: self.submit_request(item, message.get('1.0', tk.END).strip(), request_window),
+            "Send Request",
+            lambda: self.submit_request(donation['values'][6], message.get('1.0', tk.END).strip(), request_window),
             width=30
         ).pack(pady=20)
 
-    def submit_request(self, item, message, window):
+    def submit_request(self, donation_id, message, window):
         if not message:
             messagebox.showwarning("Warning", "Please enter a message")
             return
-            
-        donation = self.donations_tree.item(item)
-        data = {
-            'donation_id': donation['values'][0],  # Assuming first column is ID
-            'message': message
-        }
         
-        response = self.db.send_request(data)
+        # Get estimated delivery date
+        date_window = tk.Toplevel(self.root)
+        date_window.title("Estimated Delivery Date")
+        date_window.geometry("400x200")
+        date_window.configure(bg=COLORS['card'])
         
-        if response:
-            messagebox.showinfo("Success", "Request sent successfully!")
-            window.destroy()
+        content = ttk.Frame(date_window, style='Card.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        ttk.Label(content, text="Select Estimated Delivery Date", style='Subtitle.TLabel').pack(pady=(0, 10))
+        
+        # Date picker (you might want to use a calendar widget here)
+        date_entry = ModernUI.create_entry(content, "YYYY-MM-DD", width=30)
+        date_entry.pack(pady=10)
+        
+        def submit_with_date():
+            estimated_date = date_entry.get()
+            try:
+                datetime.strptime(estimated_date, '%Y-%m-%d')
+                success, response = self.db.create_request(
+                    self.current_user['unique_id'],
+                    donation_id,
+                    message
+                )
+                
+                if success:
+                    # Create delivery record
+                    delivery_success, tracking_number = self.db.create_delivery(
+                        donation_id,
+                        self.current_user['unique_id'],
+                        estimated_date
+                    )
+                    
+                    if delivery_success:
+                        messagebox.showinfo("Success", f"Request sent successfully!\nTracking Number: {tracking_number}")
+                        window.destroy()
+                        date_window.destroy()
+                        self.search_donations()
+                    else:
+                        messagebox.showerror("Error", "Failed to create delivery record")
+                else:
+                    messagebox.showerror("Error", response)
+                    
+            except ValueError:
+                messagebox.showerror("Error", "Invalid date format. Please use YYYY-MM-DD")
+        
+        ModernUI.create_button(content, "Submit", submit_with_date, width=30).pack(pady=20)
 
-    def contact_donor(self, item=None):
-        if not item:
-            selection = self.donations_tree.selection()
-            if not selection:
-                messagebox.showwarning("Warning", "Please select a donation first")
+    def validate_email(self, email):
+        """Validate email format"""
+        import re
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email)
+
+    def track_delivery(self):
+        """Track delivery status"""
+        # Get tracking number from user
+        tracking_window = tk.Toplevel(self.root)
+        tracking_window.title("Track Delivery")
+        tracking_window.geometry("400x200")
+        tracking_window.configure(bg=COLORS['card'])
+        
+        content = ttk.Frame(tracking_window, style='Card.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        ttk.Label(content, text="Enter Tracking Number", style='Title.TLabel').pack(pady=(0, 20))
+        tracking_entry = ModernUI.create_entry(content, "Enter tracking number", width=30)
+        tracking_entry.pack(pady=10)
+        
+        def check_status():
+            tracking_number = tracking_entry.get()
+            if not tracking_number:
+                messagebox.showwarning("Warning", "Please enter tracking number")
                 return
-            item = selection[0]
-        
-        donation = self.donations_tree.item(item)
-        donor = donation['values'][4]  # Assuming 'Donor' is the 5th column
-        
-        # Switch to chat frame and start conversation
-        self.show_frame('chat')
-        # Additional logic to start chat with donor
+                
+            status = self.db.get_delivery_status(tracking_number)
+            if status:
+                messagebox.showinfo("Delivery Status", 
+                    f"Status: {status['status']}\n"
+                    f"Item: {status['donation_title']}\n"
+                    f"From: {status['donor_name']}\n"
+                    f"To: {status['requester_name']}\n"
+                    f"Estimated: {status['estimated_date']}\n"
+                    f"Actual: {status['actual_date'] or 'Not delivered yet'}"
+                )
+            else:
+                messagebox.showerror("Error", "Invalid tracking number")
+                
+        ModernUI.create_button(content, "Check Status", check_status, width=30).pack(pady=20)
 
-    def check_password_strength(self, event=None):
-        """Check password strength and update the indicator"""
-        if not hasattr(self, 'reg_entries') or 'Password' not in self.reg_entries:
-            return
+    def add_message_to_chat(self, sender_id, content):
+        """Add a message to the chat window"""
+        self.message_text.configure(state='normal')
+        sender = "You: " if sender_id == self.current_user['unique_id'] else f"{self.selected_chat_user['username']}: "
+        self.message_text.insert('end', f"{sender}{content}\n")
+        self.message_text.configure(state='disabled')
+        self.message_text.see('end')
+
+    def connect_to_chat_server(self):
+        """Connect to chat server"""
+        try:
+            self.chat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.chat_socket.connect(('localhost', 5000))
             
-        password = self.reg_entries['Password'].get()
-        strength = 0
-        
-        # Length check
-        if len(password) >= 8:
-            strength += 1
+            # Send authentication
+            auth = json.dumps({
+                'user_id': self.current_user['unique_id']
+            })
+            self.chat_socket.send(auth.encode())
             
-        # Digit check
-        if any(char.isdigit() for char in password):
-            strength += 1
+            # Start listening thread
+            thread = threading.Thread(target=self.listen_for_messages)
+            thread.daemon = True
+            thread.start()
             
-        # Uppercase check
-        if any(char.isupper() for char in password):
-            strength += 1
+        except Exception as e:
+            print(f"Could not connect to chat server: {e}")
+            self.chat_socket = None
             
-        # Lowercase check
-        if any(char.islower() for char in password):
-            strength += 1
+    def listen_for_messages(self):
+        """Listen for incoming chat messages"""
+        while True:
+            try:
+                if not self.chat_socket:
+                    break
+                    
+                message = self.chat_socket.recv(1024).decode()
+                if message:
+                    data = json.loads(message)
+                    self.add_message_to_chat(data['sender_id'], data['content'])
+            except:
+                break
+
+    def update_donation_list(self, donations):
+        """Update the donations treeview"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
             
-        # Special character check
-        if any(char in "!@#$%^&*()-_=+[]{}|;:,.<>?/" for char in password):
-            strength += 1
+        # Add new items
+        for donation in donations:
+            values = (
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                donation['location'],
+                donation['donor_name'],
+                donation['status'],
+                donation['created_at'],
+                donation['donor_id']
+            )
             
-        # Update label based on strength
-        if strength == 0:
-            self.password_strength_label.config(text="Password Strength: Very Weak", foreground=COLORS['error'])
-        elif strength == 1 or strength == 2:
-            self.password_strength_label.config(text="Password Strength: Weak", foreground=COLORS['warning'])
-        elif strength == 3:
-            self.password_strength_label.config(text="Password Strength: Moderate", foreground=COLORS['accent'])
-        elif strength == 4:
-            self.password_strength_label.config(text="Password Strength: Strong", foreground=COLORS['success'])
-        else:
-            self.password_strength_label.config(text="Password Strength: Very Strong", foreground=COLORS['success'])
+            # Add description as a hidden value
+            tags = ('available',) if donation['status'] == 'available' else ()
+            item = self.donations_tree.insert('', 'end', values=values, tags=tags)
+            
+            # Store description in item dictionary
+            self.donations_tree.set(item, 'description', donation.get('description', ''))
 
 if __name__ == "__main__":
     root = tk.Tk()

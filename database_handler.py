@@ -24,20 +24,13 @@ class DatabaseHandler:
         
     def connect(self):
         """Establish database connection with retry mechanism"""
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                self.connection = mysql.connector.connect(**DB_CONFIG)
-                self.connection.autocommit = False  # Explicit transaction control
-                print("Successfully connected to MySQL database")
-                return
-            except Error as e:
-                retry_count += 1
-                print(f"Connection attempt {retry_count} failed: {e}")
-                if retry_count == max_retries:
-                    raise Exception("Failed to connect to database after multiple attempts")
+        try:
+            self.connection = mysql.connector.connect(**DB_CONFIG)
+            self.connection.autocommit = False
+            print("Successfully connected to MySQL database")
+        except Error as e:
+            print(f"Connection failed: {e}")
+            raise
             
     def ensure_connection(self):
         """Ensure database connection is active, reconnect if necessary"""
@@ -123,26 +116,19 @@ class DatabaseHandler:
         finally:
             cursor.close()
             
-    def create_donation(self, donor_id, title, description, category, condition, location, image_path=None):
-        """Create a new donation with validation"""
+    def create_donation(self, donor_id, title, description, category, condition, location, image_data=None):
+        """Create a new donation with image data"""
         self.ensure_connection()
         cursor = self.connection.cursor()
         
         try:
-            # Input validation
-            if not all([donor_id, title, description, category, condition, location]):
-                return False, "All fields are required"
-                
-            if len(title) > 100:
-                return False, "Title must be less than 100 characters"
-                
             unique_id = str(uuid.uuid4())
             query = """
                 INSERT INTO donations 
-                (unique_id, donor_id, title, description, category, `condition`, location, image_path, created_at)
+                (unique_id, donor_id, title, description, category, `condition`, location, image_data, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             """
-            values = (unique_id, donor_id, title, description, category, condition, location, image_path)
+            values = (unique_id, donor_id, title, description, category, condition, location, image_data)
             cursor.execute(query, values)
             self.connection.commit()
             return True, "Donation created successfully"
@@ -153,7 +139,7 @@ class DatabaseHandler:
             cursor.close()
             
     def get_donations(self, search_term=None, category=None, condition=None, location=None):
-        """Get donations with optional filters"""
+        """Get all donations with optional filters"""
         self.ensure_connection()
         cursor = self.connection.cursor(dictionary=True)
         
@@ -162,9 +148,17 @@ class DatabaseHandler:
                 SELECT d.*, 
                        u.username as donor_name,
                        u.email as donor_email,
-                       u.location as donor_location
+                       u.location as donor_location,
+                       u.unique_id as donor_id,
+                       COUNT(r.id) as request_count,
+                       dl.status as delivery_status,
+                       dl.tracking_number,
+                       dl.estimated_date,
+                       dl.actual_date
                 FROM donations d
                 JOIN users u ON d.donor_id = u.unique_id
+                LEFT JOIN requests r ON d.unique_id = r.donation_id
+                LEFT JOIN deliveries dl ON d.unique_id = dl.donation_id
                 WHERE 1=1
             """
             params = []
@@ -186,7 +180,7 @@ class DatabaseHandler:
                 query += " AND d.location LIKE %s"
                 params.append(f"%{location}%")
                 
-            query += " ORDER BY d.created_at DESC"
+            query += " GROUP BY d.unique_id ORDER BY d.created_at DESC"
             
             cursor.execute(query, tuple(params))
             return cursor.fetchall()
@@ -195,37 +189,115 @@ class DatabaseHandler:
             return []
         finally:
             cursor.close()
-            
-    def create_request(self, requester_id, donation_id, message):
-        """Create a new request for a donation"""
+
+    def create_delivery(self, donation_id, requester_id, estimated_date):
+        """Create a new delivery record"""
         self.ensure_connection()
         cursor = self.connection.cursor()
         
         try:
-            # Validate donation availability
-            cursor.execute(
-                "SELECT status FROM donations WHERE unique_id = %s",
-                (donation_id,)
-            )
-            donation = cursor.fetchone()
-            if not donation or donation[0] != 'available':
-                return False, "Donation is not available"
-                
             unique_id = str(uuid.uuid4())
+            tracking_number = f"TRK{str(uuid.uuid4())[:8].upper()}"
+            
             query = """
-                INSERT INTO requests (unique_id, requester_id, donation_id, message, created_at)
-                VALUES (%s, %s, %s, %s, NOW())
+                INSERT INTO deliveries 
+                (unique_id, donation_id, requester_id, tracking_number, status, estimated_date, created_at)
+                VALUES (%s, %s, %s, %s, 'pending', %s, NOW())
             """
-            cursor.execute(query, (unique_id, requester_id, donation_id, message))
+            cursor.execute(query, (unique_id, donation_id, requester_id, tracking_number, estimated_date))
             
             # Update donation status
             cursor.execute(
-                "UPDATE donations SET status = 'pending' WHERE unique_id = %s",
+                "UPDATE donations SET status = 'in_delivery' WHERE unique_id = %s",
                 (donation_id,)
             )
             
             self.connection.commit()
-            return True, "Request created successfully"
+            return True, tracking_number
+        except Error as e:
+            self.connection.rollback()
+            return False, str(e)
+        finally:
+            cursor.close()
+
+    def update_delivery_status(self, tracking_number, status, actual_date=None):
+        """Update delivery status"""
+        self.ensure_connection()
+        cursor = self.connection.cursor()
+        
+        try:
+            query = """
+                UPDATE deliveries 
+                SET status = %s, actual_date = %s, updated_at = NOW()
+                WHERE tracking_number = %s
+            """
+            cursor.execute(query, (status, actual_date, tracking_number))
+            
+            if status == 'delivered':
+                # Update donation status
+                cursor.execute("""
+                    UPDATE donations d
+                    JOIN deliveries dl ON d.unique_id = dl.donation_id
+                    SET d.status = 'completed'
+                    WHERE dl.tracking_number = %s
+                """, (tracking_number,))
+                
+            self.connection.commit()
+            return True
+        except Error as e:
+            self.connection.rollback()
+            return False
+        finally:
+            cursor.close()
+
+    def get_delivery_status(self, tracking_number):
+        """Get delivery status and details"""
+        self.ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        
+        try:
+            query = """
+                SELECT d.*, 
+                       dn.title as donation_title,
+                       u_donor.username as donor_name,
+                       u_req.username as requester_name
+                FROM deliveries d
+                JOIN donations dn ON d.donation_id = dn.unique_id
+                JOIN users u_donor ON dn.donor_id = u_donor.unique_id
+                JOIN users u_req ON d.requester_id = u_req.unique_id
+                WHERE d.tracking_number = %s
+            """
+            cursor.execute(query, (tracking_number,))
+            return cursor.fetchone()
+        except Error as e:
+            print(f"Error fetching delivery status: {e}")
+            return None
+        finally:
+            cursor.close()
+            
+    def create_request(self, requester_id, donation_id, message):
+        """Create a new donation request"""
+        self.ensure_connection()
+        cursor = self.connection.cursor()
+        
+        try:
+            # Check if user already requested this donation
+            cursor.execute(
+                "SELECT id FROM requests WHERE requester_id = %s AND donation_id = %s",
+                (requester_id, donation_id)
+            )
+            if cursor.fetchone():
+                return False, "You have already requested this donation"
+
+            unique_id = str(uuid.uuid4())
+            query = """
+                INSERT INTO requests 
+                (unique_id, requester_id, donation_id, message, status, created_at)
+                VALUES (%s, %s, %s, %s, 'pending', NOW())
+            """
+            cursor.execute(query, (unique_id, requester_id, donation_id, message))
+            self.connection.commit()
+            return True, "Request sent successfully"
         except Error as e:
             self.connection.rollback()
             return False, f"Database error: {str(e)}"
@@ -392,7 +464,7 @@ class DatabaseHandler:
         """Get user statistics"""
         self.ensure_connection()
         cursor = self.connection.cursor(dictionary=True)
-        
+        self.user_id = user_id
         try:
             query = """
                 SELECT 
@@ -404,7 +476,7 @@ class DatabaseHandler:
                 LEFT JOIN donations d ON u.unique_id = d.donor_id
                 LEFT JOIN requests r ON u.unique_id = r.requester_id
                 LEFT JOIN messages m ON u.unique_id = m.sender_id
-                WHERE u.unique_id = %s
+                WHERE u.unique_id = self.user_id
                 GROUP BY u.id
             """
             cursor.execute(query, (user_id,))
@@ -419,4 +491,97 @@ class DatabaseHandler:
         """Close database connection"""
         if self.connection and self.connection.is_connected():
             self.connection.close()
-            print("Database connection closed") 
+            print("Database connection closed")
+            
+    def send_request(self, data):
+        """Send a request for a donation"""
+        self.ensure_connection()
+        cursor = self.connection.cursor()
+        
+        try:
+            query = """
+                INSERT INTO requests 
+                (unique_id, donation_id, requester_id, message, status, created_at)
+                VALUES (%s, %s, %s, %s, 'pending', NOW())
+            """
+            values = (
+                str(uuid.uuid4()),
+                data['donation_id'],
+                self.current_user['unique_id'],
+                data['message']
+            )
+            cursor.execute(query, values)
+            self.connection.commit()
+            return True
+        except Error as e:
+            self.connection.rollback()
+            print(f"Error sending request: {e}")
+            return False
+        finally:
+            cursor.close()
+
+    def get_user_by_id(self, user_id):
+        """Get user information by ID"""
+        self.ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        
+        try:
+            query = "SELECT * FROM users WHERE unique_id = %s"
+            cursor.execute(query, (user_id,))
+            return cursor.fetchone()
+        except Error as e:
+            print(f"Error fetching user: {e}")
+            return None
+        finally:
+            cursor.close()
+
+    def get_user_conversations(self, user_id):
+        """Get all conversations for a user"""
+        self.ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        
+        try:
+            query = """
+                SELECT DISTINCT
+                    u.unique_id,
+                    u.username,
+                    u.email,
+                    m.created_at as last_message_time
+                FROM users u
+                JOIN messages m ON (u.unique_id = m.sender_id OR u.unique_id = m.receiver_id)
+                WHERE (m.sender_id = %s OR m.receiver_id = %s)
+                    AND u.unique_id != %s
+                ORDER BY m.created_at DESC
+            """
+            cursor.execute(query, (user_id, user_id, user_id))
+            return cursor.fetchall()
+        except Error as e:
+            print(f"Error fetching conversations: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    def get_conversation_messages(self, user_id, other_user_id):
+        """Get messages between two users"""
+        self.ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        
+        try:
+            query = """
+                SELECT m.*,
+                       s.username as sender_name,
+                       r.username as receiver_name
+                FROM messages m
+                JOIN users s ON m.sender_id = s.unique_id
+                JOIN users r ON m.receiver_id = r.unique_id
+                WHERE (m.sender_id = %s AND m.receiver_id = %s)
+                   OR (m.sender_id = %s AND m.receiver_id = %s)
+                ORDER BY m.created_at ASC
+            """
+            cursor.execute(query, (user_id, other_user_id, other_user_id, user_id))
+            return cursor.fetchall()
+        except Error as e:
+            print(f"Error fetching messages: {e}")
+            return []
+        finally:
+            cursor.close()
