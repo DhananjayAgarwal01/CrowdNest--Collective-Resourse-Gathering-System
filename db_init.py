@@ -45,6 +45,7 @@ def init_tables():
         # Connect to the database
         connection = mysql.connector.connect(**DB_CONFIG)
         cursor = connection.cursor()
+<<<<<<< HEAD
         
         # Drop existing tables in reverse order to handle foreign key constraints
         cursor.execute("DROP TABLE IF EXISTS user_ratings")
@@ -54,6 +55,8 @@ def init_tables():
         cursor.execute("DROP TABLE IF EXISTS donation_images")
         cursor.execute("DROP TABLE IF EXISTS donations")
         cursor.execute("DROP TABLE IF EXISTS users")
+=======
+>>>>>>> 57b6cd262ce4b76cada328a5f94919173faa89c3
         
         # Create users table
         cursor.execute("""
@@ -63,9 +66,13 @@ def init_tables():
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password_hash VARCHAR(64) NOT NULL,
                 email VARCHAR(100) UNIQUE NOT NULL,
+<<<<<<< HEAD
                 full_name VARCHAR(100),
                 location VARCHAR(100) NOT NULL,
                 profile_image VARCHAR(255) DEFAULT NULL,
+=======
+                location VARCHAR(100) NOT NULL,
+>>>>>>> 57b6cd262ce4b76cada328a5f94919173faa89c3
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 last_login TIMESTAMP NULL,
@@ -86,7 +93,11 @@ def init_tables():
                 category VARCHAR(50) NOT NULL,
                 `condition` VARCHAR(50) NOT NULL,
                 location VARCHAR(100) NOT NULL,
+<<<<<<< HEAD
                 image_path LONGTEXT,
+=======
+                image_path VARCHAR(255),
+>>>>>>> 57b6cd262ce4b76cada328a5f94919173faa89c3
                 status ENUM('available', 'pending', 'completed', 'cancelled') DEFAULT 'available',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -96,6 +107,7 @@ def init_tables():
                 INDEX idx_location (location),
                 FULLTEXT INDEX idx_search (title, description)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+<<<<<<< HEAD
         """)
         
         # Create donation_images table
@@ -109,6 +121,8 @@ def init_tables():
                 FOREIGN KEY (donation_id) REFERENCES donations(unique_id) ON DELETE CASCADE,
                 INDEX idx_donation (donation_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+=======
+>>>>>>> 57b6cd262ce4b76cada328a5f94919173faa89c3
         """)
         
         # Create requests table
@@ -210,4 +224,8 @@ def main():
     return True
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    main() 
+>>>>>>> 57b6cd262ce4b76cada328a5f94919173faa89c3
