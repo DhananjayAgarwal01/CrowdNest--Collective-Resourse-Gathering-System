@@ -5,14 +5,17 @@ import io
 import base64
 from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS
 from src.ui.modern_ui import ModernUI
+import os
 
 class DonationListPage:
-    def __init__(self, parent, get_donations_callback, contact_donor_callback, show_frame_callback, update_status_callback=None):
+    def __init__(self, parent, get_donations_callback, contact_donor_callback, show_frame_callback, update_status_callback=None, mark_as_donated_callback=None, current_user=None):
         self.parent = parent
         self.get_donations = get_donations_callback
         self.contact_donor_callback = contact_donor_callback
         self.show_frame = show_frame_callback
         self.update_status_callback = update_status_callback
+        self.mark_as_donated_callback = mark_as_donated_callback
+        self.current_user = current_user
         self.frame = None
         self.search_entry = None
         self.category_filter = None
@@ -142,25 +145,33 @@ class DonationListPage:
         # Bind double-click event
         self.donations_tree.bind('<Double-1>', self.on_donation_select)
         
-        # Create button frame
-        button_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        button_frame.pack(fill='x', padx=20, pady=10)
+        # Create action buttons with login checks
+        action_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        action_frame.pack(fill='x', padx=20, pady=10)
+        
+        contact_button = ttk.Button(
+            action_frame, 
+            text="Contact Donor", 
+            command=self.on_contact_donor
+        )
+        contact_button.pack(side='left', padx=5)
+        
+        interested_button = ttk.Button(
+            action_frame, 
+            text="Mark as Interested", 
+            command=self.on_mark_as_interested
+        )
+        interested_button.pack(side='left', padx=5)
         
         # Add buttons
         ModernUI.create_button(
-            button_frame,
+            action_frame,
             "View Selected",
             self.view_donation_details
         ).pack(side='left', padx=5)
         
         ModernUI.create_button(
-            button_frame,
-            "Contact Donor",
-            self.contact_donor
-        ).pack(side='left', padx=5)
-        
-        ModernUI.create_button(
-            button_frame,
+            action_frame,
             "Back to Dashboard",
             lambda: self.show_frame('dashboard'),
             style='Secondary.TButton'
@@ -169,15 +180,61 @@ class DonationListPage:
         # Load initial donations
         self.refresh_donations()
     
-    def refresh_donations(self):
-        search_term = self.search_entry.get()
-        category = self.category_filter.get() if self.category_filter.get() != "All Categories" else None
-        condition = self.condition_filter.get() if self.condition_filter.get() != "All Conditions" else None
-        location = self.location_filter.get() if self.location_filter.get() != "All Locations" else None
-        status = self.status_filter.get() if self.status_filter.get() != "All Status" else None
+    def refresh_donations(self, search_term=None, category=None, condition=None, location=None, status=None):
+        """Refresh the donations list with optional filters"""
+        try:
+            # Prepare filter parameters
+            filters = {}
+            
+            # Add non-None filters
+            if search_term:
+                # For search_term, we'll need to modify get_donations to handle it
+                filters['search_term'] = search_term
+            
+            if category:
+                filters['category'] = category
+            
+            if condition:
+                filters['condition'] = condition
+            
+            if location:
+                filters['location'] = location
+            
+            if status:
+                filters['status'] = status
+            
+            # Retrieve donations using the new method
+            donations = self.get_donations(**filters)
+            
+            # Clear existing items in the tree
+            for item in self.donations_tree.get_children():
+                self.donations_tree.delete(item)
+            
+            # Populate tree with donations
+            for donation in donations:
+                # Combine state and city for location display
+                location = donation.get('location', 'Unknown')
+                
+                # Prepare values for tree view
+                values = (
+                    donation.get('title', 'Untitled'),
+                    donation.get('category', 'Uncategorized'),
+                    donation.get('condition', 'Unknown'),
+                    location,
+                    donation.get('donor_name', 'Anonymous'),
+                    donation.get('status', 'Available')
+                )
+                
+                # Insert donation with unique ID as tag
+                self.donations_tree.insert(
+                    '', 'end', 
+                    values=values, 
+                    tags=(str(donation.get('unique_id')),)
+                )
         
-        donations = self.get_donations(search_term, category, condition, location, status)
-        self.update_donation_list(donations)
+        except Exception as e:
+            print(f"Error refreshing donations: {e}")
+            messagebox.showerror("Error", "Failed to refresh donations")
     
     def update_donation_list(self, donations):
         """Update the donations list with new data"""
@@ -214,14 +271,59 @@ class DonationListPage:
             'values': self.donations_tree.item(item)['values']
         }
         
+        # Fetch full donation details
+        full_donation = self.get_donations(donation_id=donation['id'])[0]
+        
         # Create popup window
         popup = tk.Toplevel()
         popup.title("Donation Details")
-        popup.geometry("500x600")
+        popup.geometry("600x700")
         
         # Create main frame
         main_frame = ModernUI.create_card(popup)
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Image display
+        image_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        image_frame.pack(fill='x', pady=10)
+        
+        # Check if image exists
+        if full_donation.get('image_path'):
+            try:
+                # Convert image data to PhotoImage
+                from PIL import Image, ImageTk
+                import io
+                
+                # If image_path is a file path
+                if isinstance(full_donation['image_path'], str) and os.path.exists(full_donation['image_path']):
+                    image = Image.open(full_donation['image_path'])
+                # If image_path is bytes
+                elif isinstance(full_donation['image_path'], bytes):
+                    image = Image.open(io.BytesIO(full_donation['image_path']))
+                else:
+                    raise ValueError("Invalid image format")
+                
+                # Resize image to fit the frame
+                image.thumbnail((500, 300))
+                photo = ImageTk.PhotoImage(image)
+                
+                # Create label with image
+                image_label = ttk.Label(image_frame, image=photo, style='Card.TLabel')
+                image_label.image = photo  # Keep a reference to prevent garbage collection
+                image_label.pack(expand=True)
+            except Exception as e:
+                print(f"Error loading image: {e}")
+                ttk.Label(
+                    image_frame,
+                    text="Unable to load image",
+                    style='Card.TLabel'
+                ).pack(anchor='w')
+        else:
+            ttk.Label(
+                image_frame,
+                text="No image available",
+                style='Card.TLabel'
+            ).pack(anchor='w')
         
         # Title
         ttk.Label(
@@ -280,12 +382,23 @@ class DonationListPage:
         button_frame = ttk.Frame(main_frame, style='Card.TFrame')
         button_frame.pack(fill='x', pady=20)
         
+        # Contact Donor button
         ModernUI.create_button(
             button_frame,
             "Contact Donor",
             lambda: self.contact_donor(donation['id'])
         ).pack(side='left', padx=5)
         
+        # Mark as Donated button (only for the donor)
+        if self.current_user and full_donation['donor_id'] == self.current_user['unique_id'] and donation['values'][5] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Mark as Donated",
+                lambda: self.mark_as_donated(donation['id']),
+                style='Success.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
         ModernUI.create_button(
             button_frame,
             "Close",
@@ -339,3 +452,86 @@ class DonationListPage:
                 self.refresh_donations()
             else:
                 messagebox.showerror("Error", message)
+    
+    def mark_as_donated(self, donation_id):
+        """Mark the donation as donated"""
+        if not self.current_user:
+            messagebox.showerror("Error", "You must be logged in to mark a donation as donated")
+            return
+        
+        # Call the mark as donated callback
+        try:
+            success, message = self.mark_as_donated_callback(donation_id)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                # Refresh donations list
+                self.refresh_donations()
+            else:
+                messagebox.showerror("Error", message)
+        except Exception as e:
+            print(f"Error marking donation as donated: {e}")
+            messagebox.showerror("Error", "Unable to mark donation as donated")
+    
+    def on_contact_donor(self):
+        """Handle contact donor action with login check"""
+        # Check if user is logged in
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "You must be logged in to contact a donor")
+            # You might want to add a way to trigger login from here
+            return
+        
+        # Get selected donation
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Selection Required", "Please select a donation to contact")
+            return
+        
+        # Get donation ID from selected item
+        donation_id = self.donations_tree.item(selected_item[0])['tags'][0]
+        
+        # Call contact donor callback
+        self.contact_donor_callback(donation_id)
+    
+    def on_mark_as_interested(self):
+        """Handle mark as interested action with login check"""
+        # Check if user is logged in
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "You must be logged in to mark a donation as interested")
+            # You might want to add a way to trigger login from here
+            return
+        
+        # Get selected donation
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Selection Required", "Please select a donation")
+            return
+        
+        # Get donation ID from selected item
+        donation_id = self.donations_tree.item(selected_item[0])['tags'][0]
+        
+        # Call update status callback (you'll need to implement this in the main app)
+        if hasattr(self, 'update_status_callback'):
+            self.update_status_callback(donation_id, 'interested')
+    
+    def get_donations(self, filter_dict=None):
+        """
+        Retrieve donations with optional filtering
+        Excludes completed donations by default
+        """
+        try:
+            # Create a copy of the filter dictionary to avoid modifying the original
+            filter_dict = filter_dict.copy() if filter_dict else {}
+            
+            # Always exclude completed donations
+            filter_dict['status'] = 'available'
+            
+            # Call database method to get filtered donations
+            donations = self.db.get_filtered_donations(filter_dict)
+            
+            return donations
+        
+        except Exception as e:
+            print(f"Error retrieving donations: {e}")
+            messagebox.showerror("Error", "Failed to retrieve donations")
+            return []

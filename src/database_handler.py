@@ -80,40 +80,25 @@ class DatabaseHandler:
         salt = os.getenv('PASSWORD_SALT', 'default_salt')
         return hashlib.sha256((password + salt).encode()).hexdigest()
     
-    def create_user(self, username, password, email, location, full_name=None):
-        """Create a new user with validation"""
+    def create_user(self, username, password, email, location):
+        """Create a new user in the database"""
         self.ensure_connection()
-        cursor = self.connection.cursor()
-
+        cursor = None
+        
         try:
-            # Input validation
-            if not all([username, password, email, location]):
-                return False, "All fields are required"
-                
-            if len(password) < 6:
-                return False, "Password must be at least 6 characters"
-                
-            # Sanitize inputs
-            username = username.strip()
-            email = email.strip()
-            location = location.strip()
-            
-            # Check existing user
-            cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)", 
-                          (username, email))
+            # Check if username already exists
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
             existing_user = cursor.fetchone()
             
             if existing_user:
-                return False, "Username or email already exists"
+                return False, "Username already exists"
             
             # Generate unique ID
             unique_id = str(uuid.uuid4())
             
-            # Hash password
-            hashed_password = self.hash_password(password)
-            
-            # Prepare full name
-            full_name = full_name or username
+            # Hash the password
+            password_hash = self.hash_password(password)
             
             # Insert new user
             query = """
@@ -124,9 +109,9 @@ class DatabaseHandler:
             cursor.execute(query, (
                 unique_id, 
                 username, 
-                hashed_password, 
+                password_hash, 
                 email, 
-                full_name,
+                '', 
                 location
             ))
             
@@ -134,17 +119,11 @@ class DatabaseHandler:
             self.connection.commit()
             
             return True, "User created successfully"
-
-        except IntegrityError as e:
-            # Rollback in case of integrity error
-            self.connection.rollback()
-            print(f"Integrity Error: {e}")
-            return False, "Error creating user. Please check your inputs."
         
         except Error as e:
-            # Rollback in case of any other database error
-            self.connection.rollback()
-            print(f"Database Error: {e}")
+            print(f"Error creating user: {e}")
+            if self.connection:
+                self.connection.rollback()
             return False, f"Database error: {str(e)}"
         
         finally:
@@ -166,7 +145,7 @@ class DatabaseHandler:
             
             cursor = self.connection.cursor(dictionary=True)
             query = """
-                SELECT unique_id, username, email, full_name, location, created_at
+                SELECT unique_id, username, email, full_name, location, created_at, password_hash
                 FROM users
                 WHERE LOWER(username) = LOWER(%s) AND password_hash = %s
             """
@@ -174,6 +153,9 @@ class DatabaseHandler:
             user = cursor.fetchone()
             
             if user:
+                # Remove password_hash from returned user data
+                user.pop('password_hash', None)
+                
                 # Add additional user details if needed
                 user['total_donations'] = 0
                 user['total_requests'] = 0
@@ -189,52 +171,65 @@ class DatabaseHandler:
             if cursor:
                 cursor.close()
 
-    def get_donations(self, search_query=None, category=None, condition=None, location=None, donation_id=None):
-        """Get donations based on search criteria"""
-        self.ensure_connection()
-        cursor = self.connection.cursor(dictionary=True)
-        
+    def get_donations(self, **kwargs):
+        """Retrieve donations with flexible filtering"""
         try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Base query to get donations with donor information
             query = """
                 SELECT d.*, u.full_name as donor_name, u.email as donor_email
                 FROM donations d
                 JOIN users u ON d.donor_id = u.unique_id
                 WHERE 1=1
             """
-            params = []
             
-            if donation_id:
-                query += " AND d.unique_id = %s"
-                params.append(donation_id)
-                
-            if search_query:
-                query += " AND (d.title LIKE %s OR d.description LIKE %s)"
-                search_pattern = f"%{search_query}%"
-                params.extend([search_pattern, search_pattern])
-                
-            if category:
-                query += " AND d.category = %s"
-                params.append(category)
-                
-            if condition:
-                query += " AND d.condition = %s"
-                params.append(condition)
-                
-            if location:
-                query += " AND d.location = %s"
-                params.append(location)
-                
+            # Prepare conditions and values for filtering
+            conditions = []
+            values = []
+            
+            # Mapping of allowed filter keys
+            filter_mapping = {
+                'category': 'd.category',
+                'condition': 'd.condition',
+                'location': 'd.location',
+                'status': 'd.status',
+                'unique_id': 'd.unique_id',
+                'donor_id': 'd.donor_id'
+            }
+            
+            # Handle search term separately
+            if 'search_term' in kwargs and kwargs['search_term']:
+                search_term = f"%{kwargs['search_term']}%"
+                conditions.append("(d.title LIKE %s OR d.description LIKE %s)")
+                values.extend([search_term, search_term])
+            
+            # Build dynamic filter conditions
+            for key, value in kwargs.items():
+                if key in filter_mapping and value is not None and key != 'search_term':
+                    conditions.append(f"{filter_mapping[key]} = %s")
+                    values.append(value)
+            
+            # Add conditions to query if any exist
+            if conditions:
+                query += " AND " + " AND ".join(conditions)
+            
+            # Order by most recent first
             query += " ORDER BY d.created_at DESC"
             
-            cursor.execute(query, params)
+            # Execute query
+            cursor.execute(query, values)
             donations = cursor.fetchall()
-            return donations
             
-        except Error as e:
-            print(f"Error getting donations: {e}")
+            return donations
+        
+        except mysql.connector.Error as err:
+            print(f"Error retrieving donations: {err}")
             return []
+        
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def create_donation(self, donor_id, title, description, category, condition, state, city, image_data=None):
         """Create a new donation"""
@@ -272,7 +267,7 @@ class DatabaseHandler:
             cursor.execute(query, values)
             self.connection.commit()
             
-            return True, "Donation created successfully"
+            return True, unique_id
             
         except mysql.connector.Error as err:
             # Rollback the transaction in case of error
@@ -280,6 +275,71 @@ class DatabaseHandler:
             print(f"Error creating donation: {err}")
             return False, f"Failed to create donation: {str(err)}"
             
+        finally:
+            if cursor:
+                cursor.close()
+
+    def mark_donation_as_donated(self, donation_id, current_user_id):
+        """Mark a donation as donated, but only if the current user is the donor"""
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # First, verify that the current user is the donor
+            verify_query = """
+                SELECT donor_id 
+                FROM donations 
+                WHERE unique_id = %s
+            """
+            cursor.execute(verify_query, (donation_id,))
+            donation = cursor.fetchone()
+            
+            if not donation or donation['donor_id'] != current_user_id:
+                return False, "You are not authorized to mark this donation as donated"
+            
+            # Update donation status
+            update_query = """
+                UPDATE donations 
+                SET status = 'completed', 
+                    updated_at = NOW() 
+                WHERE unique_id = %s
+            """
+            cursor.execute(update_query, (donation_id,))
+            self.connection.commit()
+            
+            return True, "Donation marked as donated successfully"
+        
+        except mysql.connector.Error as err:
+            # Rollback the transaction in case of error
+            self.connection.rollback()
+            print(f"Error marking donation as donated: {err}")
+            return False, f"Failed to mark donation as donated: {str(err)}"
+        
+        finally:
+            if cursor:
+                cursor.close()
+
+    def get_user_donation_history(self, user_id):
+        """Retrieve donation history for a specific user"""
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            query = """
+                SELECT d.*, u.full_name as donor_name
+                FROM donations d
+                JOIN users u ON d.donor_id = u.unique_id
+                WHERE d.donor_id = %s AND d.status = 'completed'
+                ORDER BY d.updated_at DESC
+            """
+            
+            cursor.execute(query, (user_id,))
+            donation_history = cursor.fetchall()
+            
+            return donation_history
+        
+        except mysql.connector.Error as err:
+            print(f"Error retrieving donation history: {err}")
+            return []
+        
         finally:
             if cursor:
                 cursor.close()
@@ -343,3 +403,169 @@ class DatabaseHandler:
             return False, f"Database error: {str(e)}"
         finally:
             cursor.close()
+
+    def update_user_profile(self, user_id, profile_data):
+        """Update user profile information"""
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Prepare the update query dynamically based on provided data
+            update_fields = []
+            values = []
+            
+            # Validate and add fields to update
+            if 'full_name' in profile_data:
+                update_fields.append("full_name = %s")
+                values.append(profile_data['full_name'])
+            
+            if 'email' in profile_data:
+                # Validate email format
+                import re
+                if not re.match(r"[^@]+@[^@]+\.[^@]+", profile_data['email']):
+                    return False, "Invalid email format"
+                
+                update_fields.append("email = %s")
+                values.append(profile_data['email'])
+            
+            if 'location' in profile_data:
+                update_fields.append("location = %s")
+                values.append(profile_data['location'])
+            
+            # If no fields to update, return
+            if not update_fields:
+                return False, "No fields to update"
+            
+            # Add user_id to values for WHERE clause
+            values.append(user_id)
+            
+            # Construct full query
+            query = f"""
+                UPDATE users 
+                SET {', '.join(update_fields)}
+                WHERE unique_id = %s
+            """
+            
+            # Execute update
+            cursor.execute(query, values)
+            self.connection.commit()
+            
+            return True, "Profile updated successfully"
+        
+        except mysql.connector.Error as err:
+            # Rollback the transaction in case of error
+            self.connection.rollback()
+            print(f"Error updating user profile: {err}")
+            
+            # Check for duplicate email
+            if err.errno == 1062:  # Duplicate entry
+                return False, "Email already in use"
+            
+            return False, f"Failed to update profile: {str(err)}"
+        
+        finally:
+            if cursor:
+                cursor.close()
+
+    def change_user_password(self, user_id, current_password, new_password):
+        """Change user's password with verification"""
+        try:
+            # Validate input
+            if not user_id or not current_password or not new_password:
+                print("Invalid input for password change")
+                return False
+            
+            # Verify current password first
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Hash the current password for verification
+            current_password_hash = self.hash_password(current_password)
+            
+            # Check if current password is correct
+            query = "SELECT * FROM users WHERE unique_id = %s AND password_hash = %s"
+            cursor.execute(query, (user_id, current_password_hash))
+            user = cursor.fetchone()
+            
+            if not user:
+                return False, "Current password is incorrect"
+            
+            # Hash the new password
+            new_password_hash = self.hash_password(new_password)
+            
+            # Update password
+            update_query = "UPDATE users SET password_hash = %s WHERE unique_id = %s"
+            cursor.execute(update_query, (new_password_hash, user_id))
+            
+            # Commit the transaction
+            self.connection.commit()
+            
+            return True, "Password updated successfully"
+        
+        except Error as e:
+            print(f"Error changing password: {e}")
+            self.connection.rollback()
+            return False, f"Database error: {str(e)}"
+        
+        finally:
+            if cursor:
+                cursor.close()
+
+    def get_filtered_donations(self, filter_dict=None):
+        """
+        Retrieve donations with optional filtering
+        
+        :param filter_dict: Dictionary of filter conditions
+        :return: List of filtered donations
+        """
+        try:
+            # Ensure connection is active
+            self.ensure_connection()
+            
+            # Create cursor
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Base query
+            query = """
+                SELECT d.*, u.full_name as donor_name, u.email as donor_email
+                FROM donations d
+                JOIN users u ON d.donor_id = u.unique_id
+                WHERE 1=1
+            """
+            
+            # Parameters list for query
+            params = []
+            
+            # Build dynamic filter conditions
+            if filter_dict:
+                for key, value in filter_dict.items():
+                    # Handle special cases
+                    if key == 'category':
+                        query += " AND d.category = %s"
+                        params.append(value)
+                    elif key == 'location':
+                        query += " AND d.location LIKE %s"
+                        params.append(f"%{value}%")
+                    elif key == 'status':
+                        query += " AND d.status = %s"
+                        params.append(value)
+                    elif key == 'donor_id':
+                        query += " AND d.donor_id = %s"
+                        params.append(value)
+            
+            # Add ordering
+            query += " ORDER BY d.created_at DESC"
+            
+            # Execute query
+            cursor.execute(query, params)
+            
+            # Fetch all donations
+            donations = cursor.fetchall()
+            
+            return donations
+        
+        except mysql.connector.Error as err:
+            print(f"Error retrieving filtered donations: {err}")
+            return []
+        
+        finally:
+            if cursor:
+                cursor.close()

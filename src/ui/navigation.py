@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from src.constants import COLORS
 
 class NavigationPane:
@@ -7,8 +7,12 @@ class NavigationPane:
         self.frame = ttk.Frame(parent, style='Navigation.TFrame')
         self.show_frame = show_frame_callback
         
+        # Add methods to be dynamically replaced by main app
+        self.create_donation_history = None
+        self.logout_callback = None
+        
         # Configure navigation frame style
-        style = ttk.Style()
+        style = ttk.Style(parent)
         style.configure('Navigation.TFrame', 
                        background=COLORS['primary'],
                        relief='flat')
@@ -28,40 +32,54 @@ class NavigationPane:
                  foreground='white').pack()
         
         # Navigation buttons
-        self.nav_buttons = [
-            ("Dashboard", 'dashboard', '🏠'),
-            ("Donate Item", 'donate', '📦'),
-            ("Browse Donations", 'browse', '🔍'),
-            ("Messages", 'chat', '💬'),
-            ("My Profile", 'profile', '👤'),
-            ("Logout", 'login', '🚪')
+        nav_buttons = [
+            {"text": "🏠 Dashboard", "command": lambda: self.show_frame('dashboard')},
+            {"text": "🎁 Browse Donations", "command": lambda: self.show_frame('browse')},
+            {"text": "➕ Create Donation", "command": lambda: self.show_frame('donate')},
+            {"text": "📜 Donation History", "command": self.open_donation_history},
+            {"text": "👤 Profile", "command": lambda: self.show_frame('profile')}
         ]
         
-        for text, target, icon in self.nav_buttons:
-            self.create_nav_button(text, target, icon)
-    
-    def create_nav_button(self, text, target, icon):
-        btn = tk.Button(self.frame,
-                       text=f"{icon} {text}",
-                       font=('Segoe UI', 11),
-                       bg=COLORS['primary'],
-                       fg='white',
-                       activebackground=COLORS['accent'],
-                       activeforeground='white',
-                       relief='flat',
-                       bd=0,
-                       padx=20,
-                       pady=10,
-                       anchor='w',
-                       width=20,
-                       cursor='hand2',
-                       command=lambda t=target: self.show_frame(t))
-        btn.pack(fill='x', pady=2)
+        # Create navigation buttons
+        for button_info in nav_buttons:
+            button = ttk.Button(
+                self.frame, 
+                text=button_info['text'], 
+                command=button_info['command'], 
+                style='Navigation.TButton'
+            )
+            button.pack(fill='x', padx=10, pady=5)
         
-        # Add hover effect
-        btn.bind('<Enter>', lambda e: btn.configure(bg=COLORS['accent']))
-        btn.bind('<Leave>', lambda e: btn.configure(bg=COLORS['primary']))
-
+        # Logout button
+        logout_button = ttk.Button(
+            self.frame, 
+            text="🚪 Logout", 
+            command=self.perform_logout, 
+            style='Logout.TButton'
+        )
+        logout_button.pack(fill='x', padx=10, pady=(20, 10), side='bottom')
+    
+    def open_donation_history(self):
+        """Open donation history popup"""
+        # Directly call the method to create donation history page
+        # This assumes the main app has set up the method correctly
+        if hasattr(self.show_frame, '__self__'):
+            # This is a method bound to an instance
+            app_instance = self.show_frame.__self__
+            if hasattr(app_instance, 'create_donation_history_page'):
+                app_instance.create_donation_history_page()
+            else:
+                messagebox.showinfo("Info", "Donation history feature not available")
+        else:
+            messagebox.showinfo("Info", "Donation history feature not available")
+    
+    def perform_logout(self):
+        """Perform logout"""
+        if self.logout_callback:
+            self.logout_callback()
+        else:
+            messagebox.showinfo("Info", "Logout feature not available")
+    
     def pack(self, **kwargs):
         self.frame.pack(**kwargs)
         

@@ -8,6 +8,7 @@ from src.pages.donation_form_page import DonationFormPage
 from src.pages.donation_list_page import DonationListPage
 from src.pages.profile_page import ProfilePage
 from src.pages.chat_page import ChatPage
+from src.pages.donation_history_page import DonationHistoryPage
 from src.ui.modern_ui import ModernUI
 from src.ui.navigation import NavigationPane
 from src.constants import COLORS
@@ -20,6 +21,7 @@ from urllib.parse import quote
 
 class CrowdNestApp:
     def __init__(self, root):
+        """Initialize the application"""
         self.root = root
         self.root.title("CrowdNest")
         self.root.state('zoomed')
@@ -40,12 +42,13 @@ class CrowdNestApp:
         # Create frames dictionary
         self.frames = {}
         
-        # Create and show login frame
+        # Create content frame
         self.content_frame = ttk.Frame(self.container, style='Content.TFrame')
         self.content_frame.pack(fill='both', expand=True, side='right')
         
         # Create navigation pane (initially hidden)
         self.nav_pane = NavigationPane(self.container, self.show_frame)
+        # Do NOT pack the navigation pane initially
         
         # Create all pages
         self.create_pages()
@@ -54,39 +57,58 @@ class CrowdNestApp:
         self.show_frame('login')
     
     def create_pages(self):
-        """Create application pages"""
-        # Create login page
-        self.login_page = LoginPage(self.content_frame, self.login, self.show_frame)
+        """Create all pages for the application"""
+        # Login page
+        self.login_page = LoginPage(
+            self.content_frame, 
+            self.login, 
+            self.show_frame
+        )
         self.frames['login'] = self.login_page
-        
-        # Create register page
-        self.register_page = RegistrationPage(self.content_frame, self.register, self.show_frame)
+
+        # Registration page
+        self.register_page = RegistrationPage(
+            self.content_frame, 
+            self.register, 
+            self.show_frame
+        )
         self.frames['register'] = self.register_page
-        
-        # Create dashboard page
-        self.dashboard_page = DashboardPage(self.content_frame, self.show_frame)
-        self.frames['dashboard'] = self.dashboard_page
-        
-        # Create donation form page
-        self.donation_form_page = DonationFormPage(self.content_frame, self.submit_donation, self.show_frame)
-        self.frames['donate'] = self.donation_form_page
-        
-        # Create donation list page
-        self.donation_list_page = DonationListPage(
-            self.content_frame,
-            self.get_donations,
-            self.contact_donor,
+
+        # Dashboard page
+        self.dashboard_page = DashboardPage(
+            self.content_frame, 
             self.show_frame,
-            self.update_donation_status
+            current_user=None  # Explicitly set to None initially
+        )
+        self.frames['dashboard'] = self.dashboard_page
+
+        # Donation List page
+        self.donation_list_page = DonationListPage(
+            self.content_frame, 
+            self.get_donations, 
+            self.contact_donor, 
+            self.show_frame,
+            update_status_callback=self.update_donation_status,
+            mark_as_donated_callback=self.mark_donation_as_donated,
+            current_user=self.current_user
         )
         self.frames['browse'] = self.donation_list_page
         
-        # Create profile page
+        # Donation form page
+        self.donation_form_page = DonationFormPage(
+            self.content_frame, 
+            self.submit_donation, 
+            self.show_frame
+        )
+        self.frames['donate'] = self.donation_form_page
+        
+        # Profile page
         self.profile_page = ProfilePage(
             self.content_frame,
-            self.save_profile_changes,
-            self.change_password,
-            self.show_frame
+            self.update_profile,  # save_profile_callback
+            self.change_password,  # change_password_callback
+            self.show_frame,  # show_frame_callback
+            current_user=None  # Explicitly set to None initially
         )
         self.frames['profile'] = self.profile_page
         
@@ -100,26 +122,57 @@ class CrowdNestApp:
         )
         self.frames['chat'] = self.chat_page
         
-        # Show login page by default
+        # Initially show login page
         self.show_frame('login')
     
     def login(self, username, password):
-        user_data = self.db.verify_user(username, password)
-        user, message = user_data if isinstance(user_data, tuple) else (user_data, None)
+        """Authenticate user and set current user"""
+        try:
+            # Verify user credentials
+            user, message = self.db.verify_user(username, password)
+            
+            if user:
+                # Set current user
+                self.current_user = user
+                
+                # Update pages with current user
+                pages_to_update = [
+                    'dashboard_page', 
+                    'profile_page', 
+                    'donation_list_page', 
+                    'donation_form_page'
+                ]
+                
+                for page_name in pages_to_update:
+                    if hasattr(self, page_name):
+                        page = getattr(self, page_name)
+                        page.current_user = user
+                        
+                        # Call update method if exists
+                        if hasattr(page, 'update_user_info'):
+                            page.update_user_info(user)
+                        elif hasattr(page, 'update_profile'):
+                            page.update_profile()
+                
+                # Show navigation pane
+                self.nav_pane.pack(fill='y', side='left')
+                
+                # Show dashboard
+                self.show_frame('dashboard')
+                
+                # Update dashboard
+                self.update_dashboard()
+                
+                return True
+            else:
+                # Show error message
+                messagebox.showerror("Login Failed", message)
+                return False
         
-        if user:
-            self.current_user = user
-            
-            # Update profile page with current user
-            if hasattr(self, 'profile_page'):
-                self.profile_page.current_user = self.current_user
-                self.profile_page.update_profile()
-            
-            self.nav_pane.pack(fill='y', side='left')
-            self.show_frame('dashboard')
-            self.update_dashboard()
-        else:
-            messagebox.showerror("Error", message or "Invalid credentials")
+        except Exception as e:
+            print(f"Login error: {e}")
+            messagebox.showerror("Error", "An unexpected error occurred during login")
+            return False
     
     def register(self, username, password, email, location):
         success, message = self.db.create_user(username, password, email, location)
@@ -132,7 +185,8 @@ class CrowdNestApp:
     def submit_donation(self, title, description, category, condition, state, city, image_data=None):
         """Submit a new donation"""
         if not self.current_user:
-            messagebox.showerror("Error", "You must be logged in to create a donation")
+            messagebox.showwarning("Login Required", "You must be logged in to create a donation")
+            self.show_frame('login')
             return False
             
         success, message = self.db.create_donation(
@@ -154,12 +208,37 @@ class CrowdNestApp:
             
         return success
         
-    def get_donations(self, search_term=None, category=None, condition=None, location=None, status=None):
-        """Get donations with filters"""
-        return self.db.get_donations(search_term, category, condition, location, status)
+    def get_donations(self, category=None, condition=None, location=None, donation_id=None):
+        """Retrieve donations with optional filtering"""
+        try:
+            # Prepare filter parameters
+            filters = {}
+            if category:
+                filters['category'] = category
+            if condition:
+                filters['condition'] = condition
+            if location:
+                filters['location'] = location
+            if donation_id:
+                filters['unique_id'] = donation_id
+            
+            # Call database method to get donations
+            donations = self.db.get_donations(**filters)
+            
+            return donations
         
+        except Exception as e:
+            print(f"Error retrieving donations: {e}")
+            messagebox.showerror("Error", "Failed to retrieve donations")
+            return []
+    
     def contact_donor(self, donation_id):
         """Contact a donor about their donation"""
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "You must be logged in to contact a donor")
+            self.show_frame('login')
+            return False
+        
         try:
             donations = self.db.get_donations(donation_id=donation_id)
             if not donations:
@@ -177,7 +256,8 @@ class CrowdNestApp:
             return True
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to contact donor: {str(e)}")
+            print(f"Error contacting donor: {e}")
+            messagebox.showerror("Error", "Failed to contact donor")
             return False
     
     def update_donation_status(self, donation_id, new_status):
@@ -186,6 +266,50 @@ class CrowdNestApp:
             return False, "You must be logged in to update donation status"
             
         return self.db.update_donation_status(donation_id, new_status)
+    
+    def mark_donation_as_donated(self, donation_id):
+        """Mark a donation as donated"""
+        if not self.current_user:
+            return False, "You must be logged in to mark a donation as donated"
+        
+        # Verify the current user is the donor of this donation
+        return self.db.mark_donation_as_donated(donation_id, self.current_user['unique_id'])
+
+    def get_donation_history(self):
+        """Retrieve donation history for the current user"""
+        if not self.current_user:
+            return []
+        
+        return self.db.get_user_donation_history(self.current_user['unique_id'])
+
+    def create_donation_history_page(self):
+        """Create and show donation history page"""
+        # Check if user is logged in
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "You must be logged in to view donation history")
+            self.show_frame('login')
+            return
+        
+        try:
+            # Retrieve user's donation history from the database
+            user_donations = self.db.get_user_donation_history(self.current_user['unique_id'])
+            
+            # Create a new page for donation history
+            donation_history_page = DonationHistoryPage(
+                self.content_frame, 
+                user_donations, 
+                self.show_frame
+            )
+            
+            # Add the page to frames dictionary
+            self.frames['donation_history'] = donation_history_page
+            
+            # Show the donation history page
+            self.show_frame('donation_history')
+        
+        except Exception as e:
+            print(f"Error creating donation history page: {e}")
+            messagebox.showerror("Error", "Failed to retrieve donation history")
     
     def get_contacts(self):
         if not self.current_user:
@@ -220,6 +344,38 @@ class CrowdNestApp:
         if hasattr(self, 'dashboard_page') and self.current_user:
             self.dashboard_page.update_user_info(self.current_user)
             
+    def update_profile(self, updated_profile_data):
+        """Update user profile"""
+        if not self.current_user:
+            messagebox.showwarning("Login Required", "You must be logged in to update profile")
+            self.show_frame('login')
+            return False, "Not logged in"
+        
+        try:
+            # Validate input
+            if not updated_profile_data:
+                return False, "No profile data provided"
+            
+            # Update user profile in the database
+            success, message = self.db.update_user_profile(
+                self.current_user['unique_id'], 
+                updated_profile_data
+            )
+            
+            if success:
+                # Update current user information
+                self.current_user.update(updated_profile_data)
+                messagebox.showinfo("Success", "Profile updated successfully")
+                return True, "Profile updated"
+            else:
+                messagebox.showerror("Error", message)
+                return False, message
+        
+        except Exception as e:
+            print(f"Error updating profile: {e}")
+            messagebox.showerror("Error", "Failed to update profile")
+            return False, "Update failed"
+            
     def save_profile_changes(self, email, full_name, location):
         """Save user profile changes"""
         if not self.current_user:
@@ -244,29 +400,42 @@ class CrowdNestApp:
             
         return success
             
-    def change_password(self, current_password, new_password):
-        """Change user password"""
-        if not self.current_user:
-            messagebox.showerror("Error", "You must be logged in to change your password")
-            return False
+    def change_password(self, old_password, new_password, confirm_password):
+        """Change user's password"""
+        try:
+            # Validate input
+            if not old_password or not new_password or not confirm_password:
+                messagebox.showerror("Error", "All password fields are required")
+                return False
             
-        if len(new_password) < 6:
-            messagebox.showerror("Error", "New password must be at least 6 characters long")
-            return False
+            if new_password != confirm_password:
+                messagebox.showerror("Error", "New passwords do not match")
+                return False
             
-        success, message = self.db.change_password(
-            self.current_user['unique_id'],
-            current_password,
-            new_password
-        )
+            # Verify current user and old password
+            if not self.current_user:
+                messagebox.showerror("Error", "No user is currently logged in")
+                return False
+            
+            # Use database handler to change password
+            success = self.db.change_user_password(
+                self.current_user['unique_id'], 
+                old_password, 
+                new_password
+            )
+            
+            if success:
+                messagebox.showinfo("Success", "Password changed successfully")
+                return True
+            else:
+                messagebox.showerror("Error", "Current password is incorrect")
+                return False
         
-        if success:
-            messagebox.showinfo("Success", message)
-            return True
-        else:
-            messagebox.showerror("Error", message)
+        except Exception as e:
+            print(f"Password change error: {e}")
+            messagebox.showerror("Error", "Failed to change password")
             return False
-            
+    
     def get_notifications(self, user_id=None):
         """Get recent notifications for the current user"""
         if not user_id and self.current_user:
@@ -278,26 +447,83 @@ class CrowdNestApp:
         return self.db.get_notifications(user_id)
             
     def show_frame(self, frame_name):
-        """Show the specified frame"""
-        # Show/hide navigation pane based on frame
-        if frame_name in ['login', 'register']:
-            self.nav_pane.pack_forget()
-        else:
-            self.nav_pane.pack(fill='y', side='left')
-            
-        # Special handling for profile page
-        if frame_name == 'profile' and self.current_user:
-            # Update profile display when showing profile page
-            self.profile_page.update_profile()
-            
+        """Show a specific frame, with authentication checks"""
+        # List of frames that require authentication
+        auth_required_frames = [
+            'dashboard', 
+            'donate', 
+            'profile', 
+            'chat',
+            'donation_history'
+        ]
+        
+        # Check if authentication is required for this frame
+        if frame_name in auth_required_frames:
+            # If not logged in, redirect to login
+            if not self.current_user:
+                messagebox.showwarning("Login Required", f"You must be logged in to access {frame_name}")
+                frame_name = 'login'
+        
         # Hide all frames
-        for page in self.frames.values():
-            if hasattr(page, 'frame'):
-                page.frame.pack_forget()
+        for name, frame in self.frames.items():
+            if hasattr(frame, 'frame'):
+                frame.frame.pack_forget()
+        
+        # Hide/show navigation pane based on authentication
+        if frame_name in ['login', 'register']:
+            # Hide navigation pane for login and register pages
+            if hasattr(self, 'nav_pane'):
+                self.nav_pane.pack_forget()
+        else:
+            # Show navigation pane for authenticated pages
+            if hasattr(self, 'nav_pane'):
+                self.nav_pane.pack(fill='y', side='left')
+        
+        # Show the selected frame
+        if frame_name in self.frames:
+            frame = self.frames[frame_name]
+            if hasattr(frame, 'frame'):
+                frame.frame.pack(fill='both', expand=True)
             
-        # Show selected frame
-        if hasattr(self.frames[frame_name], 'frame'):
-            self.frames[frame_name].frame.pack(fill='both', expand=True)
+            # Special handling for dashboard to update user info
+            if frame_name == 'dashboard' and self.current_user:
+                if hasattr(frame, 'update_user_info'):
+                    frame.update_user_info(self.current_user)
+        
+        return frame_name
+    
+    def logout(self):
+        """Logout the current user and reset application state"""
+        # Clear current user
+        self.current_user = None
+        
+        # Hide navigation pane
+        self.nav_pane.pack_forget()
+        
+        # Reset pages that depend on user data
+        pages_to_reset = [
+            'dashboard_page', 
+            'profile_page', 
+            'donation_list_page', 
+            'donation_form_page'
+        ]
+        
+        for page_name in pages_to_reset:
+            if hasattr(self, page_name):
+                page = getattr(self, page_name)
+                
+                # Reset current user
+                page.current_user = None
+                
+                # Call reset method if exists
+                if hasattr(page, 'reset'):
+                    page.reset()
+        
+        # Show login page
+        self.show_frame('login')
+        
+        # Optional: Clear any session tokens or additional cleanup
+        messagebox.showinfo("Logout", "You have been logged out successfully")
     
 if __name__ == '__main__':
     # Create and run Tkinter app
