@@ -241,20 +241,31 @@ class DatabaseHandler:
         try:
             cursor = self.connection.cursor(dictionary=True)
             
+            # Convert image_data to bytes if it's a list
+            if isinstance(image_data, list):
+                # Assuming the first element is the image data
+                image_data = image_data[0] if image_data else None
+            
+            # Generate a unique ID for the donation
+            unique_id = str(uuid.uuid4())
+            
             # Insert donation
             query = """
                 INSERT INTO donations (
-                    donor_id, title, description, category,
-                    condition_status, state, city, status,
-                    image_data, created_at
+                    unique_id, donor_id, title, description, category,
+                    `condition`, location, status,
+                    image_path, created_at
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                 )
             """
             
+            # Combine state and city into location
+            location = f"{city}, {state}"
+            
             values = (
-                donor_id, title, description, category,
-                condition, state, city, 'Available',
+                unique_id, donor_id, title, description, category,
+                condition, location, 'available',
                 image_data
             )
             
@@ -264,12 +275,15 @@ class DatabaseHandler:
             return True, "Donation created successfully"
             
         except mysql.connector.Error as err:
+            # Rollback the transaction in case of error
+            self.connection.rollback()
             print(f"Error creating donation: {err}")
             return False, f"Failed to create donation: {str(err)}"
             
         finally:
-            cursor.close()
-            
+            if cursor:
+                cursor.close()
+
     def update_donation_status(self, donation_id, new_status):
         """Update donation status (Available/Received/Donated)"""
         self.ensure_connection()
