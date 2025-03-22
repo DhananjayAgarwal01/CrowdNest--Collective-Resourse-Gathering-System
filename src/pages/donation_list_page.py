@@ -198,7 +198,7 @@ class DonationListPage:
                     donation['donor_name'],
                     donation['status']
                 ),
-                tags=(str(donation['id']),)
+                tags=(str(donation['unique_id']),)
             )
             
     def view_donation_details(self):
@@ -301,10 +301,31 @@ class DonationListPage:
                 return
             item = selection[0]
         
-        donation_id = self.donations_tree.item(item, 'tags')[0]
+        try:
+            # Try to get the donation ID from tags first
+            tags = self.donations_tree.item(item, 'tags')
+            if tags:
+                donation_id = tags[0]
+            else:
+                # If no tags, get the ID from the values
+                values = self.donations_tree.item(item, 'values')
+                if values and len(values) > 0:
+                    # Assuming the first value is the donation ID
+                    donation_id = values[0]
+                else:
+                    messagebox.showerror("Error", "Unable to retrieve donation ID")
+                    return
+        except Exception as e:
+            print(f"Error retrieving donation ID: {e}")
+            messagebox.showerror("Error", "Error retrieving donation details")
+            return
         
         # Call the contact donor callback function provided by the main app
-        self.contact_donor_callback(donation_id)
+        try:
+            self.contact_donor_callback(donation_id)
+        except Exception as e:
+            print(f"Error in contact_donor_callback: {e}")
+            messagebox.showerror("Error", "Unable to contact donor")
     
     def on_donation_select(self, event):
         self.view_donation_details()
