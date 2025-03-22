@@ -7,16 +7,18 @@ from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS
 from src.ui.modern_ui import ModernUI
 
 class DonationListPage:
-    def __init__(self, parent, get_donations_callback, contact_donor_callback, show_frame_callback):
+    def __init__(self, parent, get_donations_callback, contact_donor_callback, show_frame_callback, update_status_callback=None):
         self.parent = parent
         self.get_donations = get_donations_callback
         self.contact_donor_callback = contact_donor_callback
         self.show_frame = show_frame_callback
+        self.update_status_callback = update_status_callback
         self.frame = None
         self.search_entry = None
         self.category_filter = None
         self.condition_filter = None
         self.location_filter = None
+        self.status_filter = None
         self.donations_tree = None
         self.create_frame()
         
@@ -69,6 +71,15 @@ class DonationListPage:
         filters_frame = ttk.Frame(search_frame, style='Card.TFrame')
         filters_frame.pack(side='right', fill='x')
         
+        # Status filter
+        self.status_filter = ModernUI.create_dropdown(
+            filters_frame,
+            ["All Status", "Available", "Received", "Donated"],
+            "All Status"
+        )
+        self.status_filter.pack(side='left', padx=5)
+        self.status_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_donations())
+        
         # Category filter
         self.category_filter = ModernUI.create_dropdown(
             filters_frame,
@@ -101,7 +112,7 @@ class DonationListPage:
         donations_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
         # Create Treeview
-        columns = ('title', 'category', 'condition', 'location', 'donor')
+        columns = ('title', 'category', 'condition', 'location', 'donor', 'status')
         self.donations_tree = ttk.Treeview(donations_frame, columns=columns, show='headings', style='Treeview')
         
         # Define column headings
@@ -110,6 +121,7 @@ class DonationListPage:
         self.donations_tree.heading('condition', text='Condition')
         self.donations_tree.heading('location', text='Location')
         self.donations_tree.heading('donor', text='Donor')
+        self.donations_tree.heading('status', text='Status')
         
         # Define column widths
         self.donations_tree.column('title', width=200)
@@ -117,6 +129,7 @@ class DonationListPage:
         self.donations_tree.column('condition', width=100)
         self.donations_tree.column('location', width=150)
         self.donations_tree.column('donor', width=150)
+        self.donations_tree.column('status', width=100)
         
         # Add scrollbar to treeview
         tree_scrollbar = ttk.Scrollbar(donations_frame, orient='vertical', command=self.donations_tree.yview)
@@ -161,8 +174,9 @@ class DonationListPage:
         category = self.category_filter.get() if self.category_filter.get() != "All Categories" else None
         condition = self.condition_filter.get() if self.condition_filter.get() != "All Conditions" else None
         location = self.location_filter.get() if self.location_filter.get() != "All Locations" else None
+        status = self.status_filter.get() if self.status_filter.get() != "All Status" else None
         
-        donations = self.get_donations(search_term, category, condition, location)
+        donations = self.get_donations(search_term, category, condition, location, status)
         self.update_donation_list(donations)
     
     def update_donation_list(self, donations):
@@ -181,7 +195,8 @@ class DonationListPage:
                     donation['category'],
                     donation['condition'],
                     donation['location'],
-                    donation['donor_name']
+                    donation['donor_name'],
+                    donation['status']
                 ),
                 tags=(str(donation['id']),)
             )
@@ -251,6 +266,16 @@ class DonationListPage:
             style='Card.TLabel'
         ).pack(anchor='w')
         
+        # Status
+        status_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        status_frame.pack(fill='x', pady=10)
+        
+        ttk.Label(
+            status_frame,
+            text="Status: " + donation['values'][5],
+            style='Card.TLabel'
+        ).pack(anchor='w')
+        
         # Action buttons
         button_frame = ttk.Frame(main_frame, style='Card.TFrame')
         button_frame.pack(fill='x', pady=20)
@@ -283,3 +308,13 @@ class DonationListPage:
     
     def on_donation_select(self, event):
         self.view_donation_details()
+    
+    def update_donation_status(self, donation_id, new_status):
+        """Update the status of a donation"""
+        if self.update_status_callback:
+            success, message = self.update_status_callback(donation_id, new_status)
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_donations()
+            else:
+                messagebox.showerror("Error", message)

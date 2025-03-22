@@ -17,6 +17,9 @@ class DonationFormPage(ttk.Frame):
         self.donation_entries = {}
         self.donation_state_var = tk.StringVar()
         self.donation_city_var = tk.StringVar()
+        self.category_var = tk.StringVar()
+        self.condition_var = tk.StringVar()
+        self.state_var = tk.StringVar()
         
         # Create the main frame
         self.create_frame()
@@ -84,7 +87,8 @@ class DonationFormPage(ttk.Frame):
         self.category_combobox = ModernUI.create_dropdown(
             category_frame,
             CATEGORIES,
-            "Select category"
+            "Select category",
+            textvariable=self.category_var
         )
         self.category_combobox.pack(fill='x', pady=(5,0))
         
@@ -95,7 +99,8 @@ class DonationFormPage(ttk.Frame):
         self.condition_combobox = ModernUI.create_dropdown(
             condition_frame,
             CONDITIONS,
-            "Select condition"
+            "Select condition",
+            textvariable=self.condition_var
         )
         self.condition_combobox.pack(fill='x', pady=(5,0))
         
@@ -111,7 +116,7 @@ class DonationFormPage(ttk.Frame):
             state_frame,
             list(STATES.keys()),
             "Select state",
-            textvariable=self.donation_state_var
+            textvariable=self.state_var
         )
         self.state_combobox.pack(fill='x', pady=(5,0))
         
@@ -122,13 +127,12 @@ class DonationFormPage(ttk.Frame):
         self.city_combobox = ModernUI.create_dropdown(
             city_frame,
             [],
-            "Select city",
-            textvariable=self.donation_city_var
+            "Select city"
         )
         self.city_combobox.pack(fill='x', pady=(5,0))
         
         # Bind state selection to update cities
-        self.donation_state_var.trace('w', self.update_cities)
+        self.state_var.trace('w', self.update_cities)
         
         # Image upload section
         image_frame = ttk.Frame(form_frame, style='Card.TFrame')
@@ -167,49 +171,58 @@ class DonationFormPage(ttk.Frame):
         ).pack(side='left', padx=5)
         
     def submit_donation(self):
-        # Get all the donation details
-        title = self.title_entry.get()
-        description = self.description_text.get('1.0', 'end-1c')
-        category = self.category_combobox.get()
-        condition = self.condition_combobox.get()
-        state = self.state_combobox.get()
-        city = self.city_combobox.get()
-
+        """Submit the donation form"""
+        # Get form data
+        title = self.title_entry.get().strip()
+        description = self.description_text.get('1.0', tk.END).strip()
+        category = self.category_var.get()
+        condition = self.condition_var.get()
+        state = self.state_var.get()
+        city = self.city_combobox.get().strip()
+        
         # Validate required fields
-        if not title or not description or not category or not condition or not state or not city:
-            messagebox.showerror("Error", "Please fill in all required fields")
+        if not all([title, description, category, condition, state, city]):
+            messagebox.showerror(
+                "Error",
+                "Please fill in all required fields:\n" +
+                "- Title\n- Description\n- Category\n- Condition\n- State\n- City"
+            )
             return
-
-        # Validate field lengths
-        if len(title) > 100:
-            messagebox.showerror("Error", "Title must be less than 100 characters")
-            return
-        if len(description) > 500:
-            messagebox.showerror("Error", "Description must be less than 500 characters")
-            return
-
-        # Create donation data dictionary
-        donation_data = {
-            'title': title,
-            'description': description,
-            'category': category,
-            'condition': condition,
-            'state': state,
-            'city': city,
-            'images': self.image_paths
-        }
-
-        try:
-            # Call the callback function with the donation data
-            self.submit_donation_callback(donation_data)
-            messagebox.showinfo("Success", "Donation submitted successfully!")
-            # Clear the form
-            self.clear_form()
+            
+        # Get image data if available
+        image_data = None
+        if self.image_paths:
+            try:
+                image_data = self.image_paths
+            except Exception as e:
+                print(f"Error reading image file: {e}")
+        
+        # Submit donation
+        success = self.submit_donation_callback(
+            title=title,
+            description=description,
+            category=category,
+            condition=condition,
+            state=state,
+            city=city,
+            image_data=image_data
+        )
+        
+        if success:
+            # Clear form
+            self.title_entry.delete(0, tk.END)
+            self.description_text.delete('1.0', tk.END)
+            self.category_var.set('')
+            self.condition_var.set('')
+            self.state_var.set('')
+            self.city_combobox.set("")
+            # Clear image paths and previews
+            self.image_paths = []
+            for widget in self.preview_frame.winfo_children():
+                widget.destroy()
             # Redirect to dashboard
             self.show_frame('dashboard')
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to submit donation: {str(e)}")
-
+    
     def update_char_counter(self, widget, counter_label, max_chars, is_text=False):
         """Update character counter for text inputs"""
         if is_text:
@@ -230,9 +243,9 @@ class DonationFormPage(ttk.Frame):
         # Clear all form fields
         self.title_entry.delete(0, 'end')
         self.description_text.delete('1.0', 'end')
-        self.category_combobox.set("Select category")
-        self.condition_combobox.set("Select condition")
-        self.state_combobox.set("Select state")
+        self.category_var.set("Select category")
+        self.condition_var.set("Select condition")
+        self.state_var.set("Select state")
         self.city_combobox.set("Select city")
         # Clear image paths and previews
         self.image_paths = []
@@ -431,7 +444,7 @@ class DonationFormPage(ttk.Frame):
         frame.destroy()
         
     def update_cities(self, *args):
-        state = self.state_combobox.get()
+        state = self.state_var.get()
         if state in CITIES_BY_STATE:
             self.city_combobox['values'] = CITIES_BY_STATE[state]
             self.city_combobox.set("Select city")

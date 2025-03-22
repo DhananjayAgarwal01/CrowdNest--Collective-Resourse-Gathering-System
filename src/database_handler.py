@@ -9,9 +9,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Load environment variables
-load_dotenv()
-
 # Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
@@ -27,14 +24,32 @@ class DatabaseHandler:
         self.connect()
         
     def connect(self):
-        """Establish database connection with retry mechanism"""
+        """Connect to MySQL database"""
+        load_dotenv()
+        
         max_retries = 3
         retry_count = 0
         last_error = None
         
         while retry_count < max_retries:
             try:
-                self.connection = mysql.connector.connect(**DB_CONFIG)
+                # Explicitly set the password to 12345678
+                password = '12345678'
+                
+                print(f"Attempting to connect with:")
+                print(f"Host: {os.getenv('DB_HOST', 'localhost')}")
+                print(f"User: {os.getenv('DB_USER', 'root')}")
+                print(f"Password: {password}")
+                print(f"Database: {os.getenv('DB_NAME', 'CrowdNest')}")
+                
+                self.connection = mysql.connector.connect(
+                    host=os.getenv('DB_HOST', 'localhost'),
+                    user=os.getenv('DB_USER', 'root'),
+                    password=password,
+                    database=os.getenv('DB_NAME', 'CrowdNest'),
+                    auth_plugin='mysql_native_password',
+                    allow_local_infile=True
+                )
                 self.connection.autocommit = False  # Explicit transaction control
                 print("Successfully connected to MySQL database")
                 return
@@ -42,6 +57,8 @@ class DatabaseHandler:
                 last_error = e
                 retry_count += 1
                 print(f"MySQL connection attempt {retry_count} failed: {e}")
+                print(f"Error type: {type(e)}")
+                print(f"Error details: {e.errno}, {e.sqlstate}, {e.msg}")
                 if retry_count < max_retries:
                     # Wait before retrying (exponential backoff)
                     import time
@@ -82,57 +99,58 @@ class DatabaseHandler:
             location = location.strip()
             
             # Check existing user
-            try:
-                cursor.execute(
-                    """SELECT COUNT(*) FROM users 
-                       WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)
-                    """, 
-                    (username, email)
-                )
-                user_count = cursor.fetchone()[0]
-                
-                if user_count > 0:
-                    return False, "Username or email already exists"
-            except mysql.connector.Error as err:
-                print(f"MySQL Error checking existing user: {err}")
-                if self.connection and self.connection.is_connected():
-                    self.connection.rollback()
-                return False, "Database error while checking user existence"
-            except Exception as e:
-                print(f"Unexpected error checking existing user: {e}")
-                if self.connection and self.connection.is_connected():
-                    self.connection.rollback()
-                return False, "Database error while checking user existence"
-
-            try:
-                # Create user
-                hashed_password = self.hash_password(password)
-                unique_id = str(uuid.uuid4())
-
-                try:
-                    query = """
-                        INSERT INTO users (unique_id, username, password_hash, email, location, full_name, created_at) 
-                        VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                    """
-                    cursor.execute(query, (unique_id, username, hashed_password, email, location, full_name))
-                    self.connection.commit()
-                    return True, "User created successfully"
-                except mysql.connector.Error as err:
-                    print(f"MySQL Error during user creation: {err}")
-                    self.connection.rollback()
-                    return False, "Database error during user creation"
-            except (Error, Exception) as e:
-                print(f"Error creating user: {e}")
-                return False, "Error creating user account"
+            cursor.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)", 
+                          (username, email))
+            existing_user = cursor.fetchone()
+            
+            if existing_user:
+                return False, "Username or email already exists"
+            
+            # Generate unique ID
+            unique_id = str(uuid.uuid4())
+            
+            # Hash password
+            hashed_password = self.hash_password(password)
+            
+            # Prepare full name
+            full_name = full_name or username
+            
+            # Insert new user
+            query = """
+            INSERT INTO users (
+                unique_id, username, password_hash, email, full_name, location, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            """
+            cursor.execute(query, (
+                unique_id, 
+                username, 
+                hashed_password, 
+                email, 
+                full_name,
+                location
+            ))
+            
+            # Commit the transaction
+            self.connection.commit()
+            
+            return True, "User created successfully"
 
         except IntegrityError as e:
+            # Rollback in case of integrity error
             self.connection.rollback()
-            return False, "Database integrity error"
+            print(f"Integrity Error: {e}")
+            return False, "Error creating user. Please check your inputs."
+        
         except Error as e:
+            # Rollback in case of any other database error
             self.connection.rollback()
+            print(f"Database Error: {e}")
             return False, f"Database error: {str(e)}"
+        
         finally:
-            cursor.close()
+            # Close cursor
+            if cursor:
+                cursor.close()
 
     def verify_user(self, username, password):
         """Verify user credentials and return user data"""
@@ -148,20 +166,21 @@ class DatabaseHandler:
             
             cursor = self.connection.cursor(dictionary=True)
             query = """
-                SELECT u.unique_id, u.username, u.email, u.location, u.created_at, u.profile_image, u.full_name,
-                       COUNT(DISTINCT d.id) as total_donations,
-                       COUNT(DISTINCT r.id) as total_requests,
-                       COUNT(DISTINCT m.id) as total_messages
-                FROM users u
-                LEFT JOIN donations d ON u.unique_id = d.donor_id
-                LEFT JOIN requests r ON u.unique_id = r.requester_id
-                LEFT JOIN messages m ON u.unique_id = m.sender_id
-                WHERE LOWER(u.username) = LOWER(%s) AND u.password_hash = %s
-                GROUP BY u.unique_id, u.username, u.email, u.location, u.created_at, u.profile_image
+                SELECT unique_id, username, email, full_name, location, created_at
+                FROM users
+                WHERE LOWER(username) = LOWER(%s) AND password_hash = %s
             """
             cursor.execute(query, (username, hashed_password))
             user = cursor.fetchone()
-            return (user, "Success") if user else (None, "Invalid username or password")
+            
+            if user:
+                # Add additional user details if needed
+                user['total_donations'] = 0
+                user['total_requests'] = 0
+                user['total_messages'] = 0
+                return (user, "Success")
+            else:
+                return (None, "Invalid username or password")
 
         except Error as e:
             print(f"Error verifying user: {e}")
@@ -214,6 +233,64 @@ class DatabaseHandler:
         except Error as e:
             print(f"Error getting donations: {e}")
             return []
+        finally:
+            cursor.close()
+
+    def create_donation(self, donor_id, title, description, category, condition, state, city, image_data=None):
+        """Create a new donation"""
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Insert donation
+            query = """
+                INSERT INTO donations (
+                    donor_id, title, description, category,
+                    condition_status, state, city, status,
+                    image_data, created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                )
+            """
+            
+            values = (
+                donor_id, title, description, category,
+                condition, state, city, 'Available',
+                image_data
+            )
+            
+            cursor.execute(query, values)
+            self.connection.commit()
+            
+            return True, "Donation created successfully"
+            
+        except mysql.connector.Error as err:
+            print(f"Error creating donation: {err}")
+            return False, f"Failed to create donation: {str(err)}"
+            
+        finally:
+            cursor.close()
+            
+    def update_donation_status(self, donation_id, new_status):
+        """Update donation status (Available/Received/Donated)"""
+        self.ensure_connection()
+        cursor = self.connection.cursor()
+        
+        try:
+            cursor.execute(
+                """UPDATE donations 
+                   SET status = %s
+                   WHERE id = %s
+                """,
+                (new_status, donation_id)
+            )
+            
+            self.connection.commit()
+            return True, f"Donation marked as {new_status}"
+            
+        except Error as e:
+            print(f"Error updating donation status: {e}")
+            self.connection.rollback()
+            return False, f"Database error: {str(e)}"
         finally:
             cursor.close()
 

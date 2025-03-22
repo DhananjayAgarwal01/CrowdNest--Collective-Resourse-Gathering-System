@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
-from datetime import datetime
+from src.constants import COLORS
 from src.ui.modern_ui import ModernUI
+from datetime import datetime
 
 class ChatPage:
     def __init__(self, parent, get_contacts_callback, get_messages_callback, send_message_callback, show_frame_callback):
@@ -10,163 +11,218 @@ class ChatPage:
         self.get_messages = get_messages_callback
         self.send_message = send_message_callback
         self.show_frame = show_frame_callback
+        
+        self.current_user = None
         self.frame = None
-        self.selected_chat_user = None
+        self.contacts_tree = None
+        self.chat_area = None
+        self.message_entry = None
+        self.selected_contact = None
+        self.messages = {}  # {contact_id: [(timestamp, sender_name, message)]}
+        
+        # Create the frame
         self.create_frame()
         
+        # Optional: set up chat client callbacks if needed
+        # self.chat_client.set_message_callback(self.on_message_received)
+        # self.chat_client.set_error_callback(self.on_chat_error)
+        
     def create_frame(self):
+        """Create the chat page frame"""
         self.frame = ModernUI.create_card(self.parent)
         
-        # Main container with two panes
-        paned_window = ttk.PanedWindow(self.frame, orient=tk.HORIZONTAL)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Create main container with padding
+        main_frame = ttk.Frame(self.frame, style='Card.TFrame')
+        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Left panel for contacts
+        # Title
+        title_label = ttk.Label(
+            main_frame,
+            text="💬 Messages",
+            style='Title.TLabel'
+        )
+        title_label.pack(pady=(0, 20))
+        
+        # Create split view for contacts and chat
+        paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        paned_window.pack(fill='both', expand=True)
+        
+        # Left side - Contacts list
         contacts_frame = ttk.Frame(paned_window, style='Card.TFrame')
         paned_window.add(contacts_frame, weight=1)
         
-        # Contacts header
-        ttk.Label(contacts_frame, text="Contacts", font=('Poppins', 16, 'bold')).pack(pady=10)
+        # Contacts title
+        ttk.Label(
+            contacts_frame,
+            text="Contacts",
+            style='Subtitle.TLabel'
+        ).pack(pady=(0, 10))
         
-        # Contacts list
-        self.contacts_list = ttk.Treeview(contacts_frame, selectmode='browse', show='tree')
-        self.contacts_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.contacts_list.bind('<<TreeviewSelect>>', self.on_contact_select)
+        # Create Treeview for contacts
+        self.contacts_tree = ttk.Treeview(
+            contacts_frame,
+            columns=('name',),
+            show='headings',
+            style='Treeview',
+            height=20
+        )
+        self.contacts_tree.heading('name', text='Name')
+        self.contacts_tree.column('name', width=200)
         
-        # Right panel for chat
+        # Add scrollbar to contacts
+        contacts_scroll = ttk.Scrollbar(contacts_frame, orient='vertical', command=self.contacts_tree.yview)
+        self.contacts_tree.configure(yscrollcommand=contacts_scroll.set)
+        
+        # Pack contacts list and scrollbar
+        self.contacts_tree.pack(side='left', fill='both', expand=True)
+        contacts_scroll.pack(side='right', fill='y')
+        
+        # Bind contact selection
+        self.contacts_tree.bind('<<TreeviewSelect>>', self.on_contact_select)
+        
+        # Right side - Chat area
         chat_frame = ttk.Frame(paned_window, style='Card.TFrame')
         paned_window.add(chat_frame, weight=2)
         
         # Chat header
-        self.chat_header = ttk.Label(chat_frame, text="Select a contact", font=('Poppins', 16, 'bold'))
-        self.chat_header.pack(pady=10)
+        self.chat_header = ttk.Label(
+            chat_frame,
+            text="Select a contact to start chatting",
+            style='Subtitle.TLabel'
+        )
+        self.chat_header.pack(fill='x', pady=(0, 10))
         
         # Chat messages area
-        self.messages_area = scrolledtext.ScrolledText(
+        self.chat_area = scrolledtext.ScrolledText(
             chat_frame,
             wrap=tk.WORD,
-            font=('Poppins', 10),
             height=20,
-            state='disabled'
+            font=('Segoe UI', 10),
+            bg='white',
+            fg=COLORS['text']
         )
-        self.messages_area.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.chat_area.pack(fill='both', expand=True, pady=(0, 10))
+        self.chat_area.configure(state='disabled')
         
         # Message input area
         input_frame = ttk.Frame(chat_frame, style='Card.TFrame')
-        input_frame.pack(fill=tk.X, padx=5, pady=5)
+        input_frame.pack(fill='x')
         
-        self.message_input = ModernUI.create_entry(input_frame, placeholder="Type your message...")
-        self.message_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        
-        send_button = ModernUI.create_button(input_frame, "Send", self.send_message_handler)
-        send_button.pack(side=tk.RIGHT)
-        
-        # Navigation buttons
-        nav_frame = ttk.Frame(self.frame, style='Card.TFrame')
-        nav_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        back_button = ModernUI.create_button(
-            nav_frame,
-            "Back to Dashboard",
-            lambda: self.show_frame('dashboard'),
-            style='Secondary.TButton'
+        self.message_entry = ModernUI.create_entry(
+            input_frame,
+            placeholder="Type your message..."
         )
-        back_button.pack(side=tk.LEFT)
+        self.message_entry.pack(side='left', fill='x', expand=True, padx=(0, 10))
+        self.message_entry.bind('<Return>', self.send_message)
+        
+        ModernUI.create_button(
+            input_frame,
+            "Send",
+            lambda: self.send_message(None)
+        ).pack(side='right')
         
         # Load contacts
-        self.load_contacts()
-    
-    def load_contacts(self):
+        self.refresh_contacts()
+        
+    def refresh_contacts(self):
+        """Refresh the contacts list"""
         # Clear existing contacts
-        for item in self.contacts_list.get_children():
-            self.contacts_list.delete(item)
-        
-        # Get contacts from database
+        for item in self.contacts_tree.get_children():
+            self.contacts_tree.delete(item)
+            
+        # Add contacts
         contacts = self.get_contacts()
-        
-        # Add contacts to listbox
         for contact in contacts:
-            self.contacts_list.insert('', 'end', text=contact['username'], values=(contact['unique_id'],))
-    
+            self.contacts_tree.insert(
+                '',
+                'end',
+                values=(contact['full_name'],),
+                tags=(str(contact['unique_id']),)
+            )
+            
     def on_contact_select(self, event):
-        # Get selected index
-        selection = self.contacts_list.selection()
+        """Handle contact selection"""
+        selection = self.contacts_tree.selection()
         if not selection:
             return
             
-        # Get contact data
-        contact_data = self.contacts_list.item(selection[0], 'values')
+        contact_id = self.contacts_tree.item(selection[0])['tags'][0]
+        contact_name = self.contacts_tree.item(selection[0])['values'][0]
         
-        # Set selected chat user
-        self.selected_chat_user = {'unique_id': contact_data[0]}
+        self.selected_contact = {
+            'id': contact_id,
+            'name': contact_name
+        }
         
         # Update chat header
-        self.chat_header.config(text=f"Chat with {self.contacts_list.item(selection[0], 'text')}")
+        self.chat_header.configure(text=f"Chat with {contact_name}")
         
-        # Load messages
-        self.update_chat_messages()
-    
-    def update_chat_messages(self):
-        if not self.selected_chat_user:
+        # Clear and load messages
+        self.chat_area.configure(state='normal')
+        self.chat_area.delete('1.0', tk.END)
+        
+        if contact_id in self.messages:
+            for timestamp, sender_name, message in self.messages[contact_id]:
+                self.add_message_to_chat(timestamp, sender_name, message)
+                
+        self.chat_area.configure(state='disabled')
+        self.chat_area.see(tk.END)
+        
+    def send_message(self, event):
+        """Send a message to the selected contact"""
+        if not self.selected_contact:
+            messagebox.showwarning("No Contact", "Please select a contact to send a message to")
             return
             
-        # Clear messages area
-        self.messages_area.config(state='normal')
-        self.messages_area.delete(1.0, tk.END)
-        
-        # Get messages
-        messages = self.get_messages(self.selected_chat_user['unique_id'])
-        
-        # Display messages
-        for message in messages:
-            # Format timestamp
-            timestamp = message['created_at']
-            if isinstance(timestamp, str):
-                # Parse string timestamp if needed
-                try:
-                    timestamp = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-                    formatted_time = timestamp.strftime('%I:%M %p')
-                except ValueError:
-                    formatted_time = timestamp  # Use as is if parsing fails
-            else:
-                # Format datetime object
-                formatted_time = timestamp.strftime('%I:%M %p')
-            
-            # Format message
-            sender_name = message['sender_name']
-            content = message['content']
-            
-            # Add message to text area
-            self.messages_area.insert(tk.END, f"{sender_name} ({formatted_time}):\n")
-            self.messages_area.insert(tk.END, f"{content}\n\n")
-        
-        # Disable editing
-        self.messages_area.config(state='disabled')
-        
-        # Scroll to bottom
-        self.messages_area.see(tk.END)
-    
-    def send_message_handler(self):
-        if not self.selected_chat_user:
-            messagebox.showinfo("Info", "Please select a contact first")
+        message = self.message_entry.get().strip()
+        if not message:
             return
             
-        # Get message content
-        content = self.message_input.get().strip()
-        if not content:
-            return
-            
-        # Send message
-        success, message = self.send_message(
-            self.selected_chat_user['unique_id'],
-            content
-        )
+        success = self.send_message(self.selected_contact['id'], message)
         
         if success:
-            # Clear message entry
-            self.message_input.delete(0, tk.END)
+            # Add message to local chat
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.add_message(
+                self.selected_contact['id'],
+                timestamp,
+                self.current_user['full_name'],
+                message
+            )
             
-            # Update chat messages
-            self.update_chat_messages()
-        else:
-            messagebox.showerror("Error", message)
+            # Clear message input
+            self.message_entry.delete(0, tk.END)
+        
+    def on_message_received(self, message):
+        """Handle received chat message"""
+        sender_id = message['sender_id']
+        sender_name = message['sender_name']
+        content = message['content']
+        timestamp = message['timestamp']
+        
+        self.add_message(sender_id, timestamp, sender_name, content)
+        
+    def add_message(self, contact_id, timestamp, sender_name, content):
+        """Add a message to the chat history"""
+        # Initialize messages list for contact if needed
+        if contact_id not in self.messages:
+            self.messages[contact_id] = []
+            
+        # Add message to history
+        self.messages[contact_id].append((timestamp, sender_name, content))
+        
+        # If this contact is currently selected, show the message
+        if self.selected_contact and self.selected_contact['id'] == contact_id:
+            self.chat_area.configure(state='normal')
+            self.add_message_to_chat(timestamp, sender_name, content)
+            self.chat_area.configure(state='disabled')
+            self.chat_area.see(tk.END)
+            
+    def add_message_to_chat(self, timestamp, sender_name, content):
+        """Add a message to the chat display"""
+        self.chat_area.insert(tk.END, f"[{timestamp}] {sender_name}:\n")
+        self.chat_area.insert(tk.END, f"{content}\n\n")
+        
+    def on_chat_error(self, error_message):
+        """Handle chat client errors"""
+        messagebox.showerror("Chat Error", error_message)

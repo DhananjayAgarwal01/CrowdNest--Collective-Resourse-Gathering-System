@@ -54,38 +54,32 @@ class CrowdNestApp:
         self.show_frame('login')
     
     def create_pages(self):
-        """Create all application pages"""
-        # Initialize ModernUI styles
-        ModernUI.setup_styles()
-        
+        """Create application pages"""
         # Create login page
         self.login_page = LoginPage(self.content_frame, self.login, self.show_frame)
         self.frames['login'] = self.login_page
         
-        # Create registration page
+        # Create register page
         self.register_page = RegistrationPage(self.content_frame, self.register, self.show_frame)
         self.frames['register'] = self.register_page
         
         # Create dashboard page
-        self.dashboard_page = DashboardPage(self.content_frame, self.show_frame, self.current_user)
+        self.dashboard_page = DashboardPage(self.content_frame, self.show_frame)
         self.frames['dashboard'] = self.dashboard_page
         
         # Create donation form page
-        self.donation_form_page = DonationFormPage(
-            self.content_frame,
-            self.submit_donation,
-            self.show_frame
-        )
-        self.frames['donation_form'] = self.donation_form_page
+        self.donation_form_page = DonationFormPage(self.content_frame, self.submit_donation, self.show_frame)
+        self.frames['donate'] = self.donation_form_page
         
         # Create donation list page
         self.donation_list_page = DonationListPage(
             self.content_frame,
             self.get_donations,
             self.contact_donor,
-            self.show_frame
+            self.show_frame,
+            self.update_donation_status
         )
-        self.frames['donation_list'] = self.donation_list_page
+        self.frames['browse'] = self.donation_list_page
         
         # Create profile page
         self.profile_page = ProfilePage(
@@ -135,51 +129,35 @@ class CrowdNestApp:
         else:
             messagebox.showerror("Error", message)
     
-    def submit_donation(self, donation_data):
+    def submit_donation(self, title, description, category, condition, state, city, image_data=None):
+        """Submit a new donation"""
         if not self.current_user:
-            messagebox.showerror("Error", "You must be logged in to submit a donation")
-            return
-        
-        # Add user_id to donation data
-        donation_data['user_id'] = self.current_user['unique_id']
-        
-        # Handle images
-        images = []
-        if 'images' in donation_data and donation_data['images']:
-            for image_path in donation_data['images']:
-                try:
-                    # Read the image file and convert to base64
-                    with open(image_path, 'rb') as img_file:
-                        img_data = img_file.read()
-                        # Encode the binary data to base64 for storage
-                        encoded_img = base64.b64encode(img_data).decode('utf-8')
-                        images.append(encoded_img)
-                except Exception as e:
-                    print(f"Error processing image {image_path}: {str(e)}")
-        
-        # Add encoded images to donation data
-        donation_data['image_data'] = images
-        
-        # Create the donation
-        success = self.db.create_donation(donation_data)
+            messagebox.showerror("Error", "You must be logged in to create a donation")
+            return False
+            
+        success, message = self.db.create_donation(
+            self.current_user['unique_id'],
+            title,
+            description,
+            category,
+            condition,
+            state,
+            city,
+            image_data
+        )
         
         if success:
-            messagebox.showinfo("Success", "Donation submitted successfully")
-            return True
+            messagebox.showinfo("Success", message)
+            self.show_frame('browse')
         else:
-            messagebox.showerror("Error", "Failed to submit donation")
-            return False
-    
-    def get_donations(self, search_query=None, category=None, condition=None, location=None, donation_id=None):
-        """Get donations based on search criteria"""
-        return self.db.get_donations(
-            search_query=search_query,
-            category=category,
-            condition=condition,
-            location=location,
-            donation_id=donation_id
-        )
-
+            messagebox.showerror("Error", message)
+            
+        return success
+        
+    def get_donations(self, search_term=None, category=None, condition=None, location=None, status=None):
+        """Get donations with filters"""
+        return self.db.get_donations(search_term, category, condition, location, status)
+        
     def contact_donor(self, donation_id):
         """Contact a donor about their donation"""
         try:
@@ -201,6 +179,13 @@ class CrowdNestApp:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to contact donor: {str(e)}")
             return False
+    
+    def update_donation_status(self, donation_id, new_status):
+        """Update the status of a donation"""
+        if not self.current_user:
+            return False, "You must be logged in to update donation status"
+            
+        return self.db.update_donation_status(donation_id, new_status)
     
     def get_contacts(self):
         if not self.current_user:

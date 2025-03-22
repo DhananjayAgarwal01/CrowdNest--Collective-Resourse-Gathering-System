@@ -30,10 +30,10 @@ class NavigationPane:
         # Navigation buttons
         self.nav_buttons = [
             ("Dashboard", 'dashboard', '🏠'),
-            ("My Profile", 'profile', '👤'),
-            ("Donate Item", 'donation_form', '📦'),
-            ("Browse Donations", 'donation_list', '🔍'),
+            ("Donate Item", 'donate', '📦'),
+            ("Browse Donations", 'browse', '🔍'),
             ("Messages", 'chat', '💬'),
+            ("My Profile", 'profile', '👤'),
             ("Logout", 'login', '🚪')
         ]
         
@@ -55,7 +55,7 @@ class NavigationPane:
                        anchor='w',
                        width=20,
                        cursor='hand2',
-                       command=lambda: self.show_frame(target))
+                       command=lambda t=target: self.show_frame(t))
         btn.pack(fill='x', pady=2)
         
         # Add hover effect
