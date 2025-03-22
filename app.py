@@ -1,15 +1,17 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from src.ui.styles import CustomStyle
-from src.ui.navigation import NavigationPane
 from src.database_handler import DatabaseHandler
 from src.pages.login_page import LoginPage
-from src.pages.register_page import RegisterPage
+from src.pages.register_page import RegistrationPage
 from src.pages.dashboard_page import DashboardPage
 from src.pages.donation_form_page import DonationFormPage
 from src.pages.donation_list_page import DonationListPage
-from src.pages.chat_page import ChatPage
 from src.pages.profile_page import ProfilePage
+from src.pages.chat_page import ChatPage
+from src.ui.modern_ui import ModernUI
+from src.ui.navigation import NavigationPane
+from src.constants import COLORS
+import uuid
 import base64
 import os
 import sys
@@ -29,7 +31,7 @@ class CrowdNestApp:
         self.current_user = None
         
         # Configure styles
-        CustomStyle.configure_styles()
+        ModernUI.setup_styles()
         
         # Create main container
         self.container = ttk.Frame(root)
@@ -52,49 +54,60 @@ class CrowdNestApp:
         self.show_frame('login')
     
     def create_pages(self):
+        """Create all application pages"""
+        # Initialize ModernUI styles
+        ModernUI.setup_styles()
+        
         # Create login page
         self.login_page = LoginPage(self.content_frame, self.login, self.show_frame)
-        self.frames['login'] = self.login_page.frame
+        self.frames['login'] = self.login_page
         
-        # Create register page
-        self.register_page = RegisterPage(self.content_frame, self.register, lambda: self.show_frame('login'))
-        self.frames['register'] = self.register_page.frame
+        # Create registration page
+        self.register_page = RegistrationPage(self.content_frame, self.register, self.show_frame)
+        self.frames['register'] = self.register_page
         
         # Create dashboard page
-        self.dashboard_page = DashboardPage(self.content_frame, self.show_frame, self.current_user, self.get_notifications)
-        self.frames['dashboard'] = self.dashboard_page.frame
+        self.dashboard_page = DashboardPage(self.content_frame, self.show_frame, self.current_user)
+        self.frames['dashboard'] = self.dashboard_page
         
         # Create donation form page
-        self.donation_form_page = DonationFormPage(self.content_frame, self.submit_donation, self.show_frame)
-        self.frames['donation_form'] = self.donation_form_page.frame
+        self.donation_form_page = DonationFormPage(
+            self.content_frame,
+            self.submit_donation,
+            self.show_frame
+        )
+        self.frames['donation_form'] = self.donation_form_page
         
         # Create donation list page
         self.donation_list_page = DonationListPage(
             self.content_frame,
             self.get_donations,
-            self.contact_donor
-        )
-        self.frames['donation_list'] = self.donation_list_page.frame
-        
-        # Create chat page
-        self.chat_page = ChatPage(
-            self.content_frame, 
-            self.get_contacts, 
-            self.get_messages, 
-            self.send_message,
+            self.contact_donor,
             self.show_frame
         )
-        self.frames['chat'] = self.chat_page.frame
+        self.frames['donation_list'] = self.donation_list_page
         
         # Create profile page
         self.profile_page = ProfilePage(
-            self.content_frame, 
-            self.save_profile_changes, 
+            self.content_frame,
+            self.save_profile_changes,
             self.change_password,
-            self.show_frame,
-            self.current_user
+            self.show_frame
         )
-        self.frames['profile'] = self.profile_page.frame
+        self.frames['profile'] = self.profile_page
+        
+        # Create chat page
+        self.chat_page = ChatPage(
+            self.content_frame,
+            self.get_contacts,
+            self.get_messages,
+            self.send_message,
+            self.show_frame
+        )
+        self.frames['chat'] = self.chat_page
+        
+        # Show login page by default
+        self.show_frame('login')
     
     def login(self, username, password):
         user_data = self.db.verify_user(username, password)
@@ -162,6 +175,7 @@ class CrowdNestApp:
         return self.db.get_donations(
             search_query=search_query,
             category=category,
+            condition=condition,
             location=location,
             donation_id=donation_id
         )
@@ -224,8 +238,8 @@ class CrowdNestApp:
     def save_profile_changes(self, email, full_name, location):
         """Save user profile changes"""
         if not self.current_user:
-            messagebox.showerror("Error", "You must be logged in to update your profile")
-            return
+            messagebox.showerror("Error", "No user logged in")
+            return False
             
         success, result = self.db.save_profile_changes(
             self.current_user['unique_id'],
@@ -235,14 +249,15 @@ class CrowdNestApp:
         )
         
         if success:
-            # Update current user data
-            self.current_user = result
-            # Update profile page
-            self.profile_page.current_user = self.current_user
-            self.profile_page.update_profile()
-            messagebox.showinfo("Success", "Profile updated successfully")
+            # Update current user info
+            self.current_user['email'] = email
+            self.current_user['full_name'] = full_name
+            self.current_user['location'] = location
+            messagebox.showinfo("Success", result)
         else:
             messagebox.showerror("Error", result)
+            
+        return success
             
     def change_password(self, current_password, new_password):
         """Change user password"""
@@ -279,21 +294,25 @@ class CrowdNestApp:
             
     def show_frame(self, frame_name):
         """Show the specified frame"""
-        if frame_name == 'login':
-            # Hide navigation pane and clear current user
+        # Show/hide navigation pane based on frame
+        if frame_name in ['login', 'register']:
             self.nav_pane.pack_forget()
-            self.current_user = None
+        else:
+            self.nav_pane.pack(fill='y', side='left')
             
-        elif frame_name == 'profile' and self.current_user:
+        # Special handling for profile page
+        if frame_name == 'profile' and self.current_user:
             # Update profile display when showing profile page
             self.profile_page.update_profile()
             
         # Hide all frames
-        for frame in self.frames.values():
-            frame.pack_forget()
+        for page in self.frames.values():
+            if hasattr(page, 'frame'):
+                page.frame.pack_forget()
             
         # Show selected frame
-        self.frames[frame_name].pack(fill='both', expand=True)
+        if hasattr(self.frames[frame_name], 'frame'):
+            self.frames[frame_name].frame.pack(fill='both', expand=True)
     
 if __name__ == '__main__':
     # Create and run Tkinter app

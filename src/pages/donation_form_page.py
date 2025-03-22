@@ -1,39 +1,179 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-import os
-import base64
+from tkinter import ttk, filedialog, messagebox, scrolledtext
 from PIL import Image, ImageTk
-from src.ui.components import ModernUI
-from src.constants import COLORS, CATEGORIES, CONDITIONS
+import io
+import base64
+from src.constants import COLORS, CATEGORIES, CONDITIONS, STATES, CITIES_BY_STATE
+from src.ui.modern_ui import ModernUI
 
-class DonationFormPage:
+class DonationFormPage(ttk.Frame):
     def __init__(self, parent, submit_donation_callback, show_frame_callback):
+        super().__init__(parent)
         self.parent = parent
         self.submit_donation_callback = submit_donation_callback
         self.show_frame = show_frame_callback
-        self.frame = None
+        self.image_data = None
+        self.image_paths = []
         self.donation_entries = {}
-        self.donation_title = None
-        self.donation_description = None
-        self.donation_category_var = tk.StringVar()
-        self.donation_condition_var = tk.StringVar()
         self.donation_state_var = tk.StringVar()
         self.donation_city_var = tk.StringVar()
-        self.title_counter = None
-        self.desc_counter = None
-        self.image_paths = []
-        self.image_previews = []
-        self.preview_frame = None
+        
+        # Create the main frame
         self.create_frame()
+        
+    def create_frame(self):
+        """Create the donation form page frame"""
+        # Main container with padding
+        self.frame = ModernUI.create_card(self.parent)
+        self.frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Create a canvas with scrollbar for scrolling
+        canvas = tk.Canvas(self.frame, bg=COLORS['card'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
+        
+        # Configure the canvas
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=800)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        
+        # Title
+        title_label = ttk.Label(
+            scrollable_frame,
+            text="Create New Donation",
+            style='Title.TLabel'
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Form container
+        form_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        form_frame.pack(fill='x', padx=40)
+        
+        # Title field
+        title_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        title_frame.pack(fill='x', pady=10)
+        ttk.Label(title_frame, text="Title", style='Card.TLabel').pack(anchor='w')
+        self.title_entry = ModernUI.create_entry(title_frame, placeholder="Enter donation title")
+        self.title_entry.pack(fill='x', pady=(5,0))
+        
+        # Description field
+        desc_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        desc_frame.pack(fill='x', pady=10)
+        ttk.Label(desc_frame, text="Description", style='Card.TLabel').pack(anchor='w')
+        self.description_text = scrolledtext.ScrolledText(
+            desc_frame,
+            wrap=tk.WORD,
+            height=4,
+            font=('Segoe UI', 10),
+            bg='white',
+            fg=COLORS['text']
+        )
+        self.description_text.pack(fill='x', pady=(5,0))
+        
+        # Category field
+        category_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        category_frame.pack(fill='x', pady=10)
+        ttk.Label(category_frame, text="Category", style='Card.TLabel').pack(anchor='w')
+        self.category_combobox = ModernUI.create_dropdown(
+            category_frame,
+            CATEGORIES,
+            "Select category"
+        )
+        self.category_combobox.pack(fill='x', pady=(5,0))
+        
+        # Condition field
+        condition_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        condition_frame.pack(fill='x', pady=10)
+        ttk.Label(condition_frame, text="Condition", style='Card.TLabel').pack(anchor='w')
+        self.condition_combobox = ModernUI.create_dropdown(
+            condition_frame,
+            CONDITIONS,
+            "Select condition"
+        )
+        self.condition_combobox.pack(fill='x', pady=(5,0))
+        
+        # Location fields
+        location_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        location_frame.pack(fill='x', pady=10)
+        
+        # State field
+        state_frame = ttk.Frame(location_frame, style='Card.TFrame')
+        state_frame.pack(fill='x')
+        ttk.Label(state_frame, text="State", style='Card.TLabel').pack(anchor='w')
+        self.state_combobox = ModernUI.create_dropdown(
+            state_frame,
+            list(STATES.keys()),
+            "Select state",
+            textvariable=self.donation_state_var
+        )
+        self.state_combobox.pack(fill='x', pady=(5,0))
+        
+        # City field
+        city_frame = ttk.Frame(location_frame, style='Card.TFrame')
+        city_frame.pack(fill='x', pady=(10,0))
+        ttk.Label(city_frame, text="City", style='Card.TLabel').pack(anchor='w')
+        self.city_combobox = ModernUI.create_dropdown(
+            city_frame,
+            [],
+            "Select city",
+            textvariable=self.donation_city_var
+        )
+        self.city_combobox.pack(fill='x', pady=(5,0))
+        
+        # Bind state selection to update cities
+        self.donation_state_var.trace('w', self.update_cities)
+        
+        # Image upload section
+        image_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        image_frame.pack(fill='x', pady=20)
+        ttk.Label(image_frame, text="Images", style='Card.TLabel').pack(anchor='w')
+        
+        # Image preview frame
+        self.preview_frame = ttk.Frame(image_frame, style='Card.TFrame')
+        self.preview_frame.pack(fill='x', pady=(5,10))
+        
+        # Upload button
+        ModernUI.create_button(
+            image_frame,
+            "Upload Images",
+            self.upload_images,
+            style='Secondary.TButton'
+        ).pack(anchor='w')
+        
+        # Button frame
+        button_frame = ttk.Frame(form_frame, style='Card.TFrame')
+        button_frame.pack(fill='x', pady=20)
+        
+        # Submit button
+        ModernUI.create_button(
+            button_frame,
+            "Submit Donation",
+            self.submit_donation
+        ).pack(side='left', padx=5)
+        
+        # Cancel button
+        ModernUI.create_button(
+            button_frame,
+            "Cancel",
+            lambda: self.show_frame('dashboard'),
+            style='Secondary.TButton'
+        ).pack(side='left', padx=5)
         
     def submit_donation(self):
         # Get all the donation details
-        title = self.donation_entries['Title:'].get()
-        description = self.donation_entries['Description:'].get('1.0', 'end-1c')
-        category = self.donation_entries['Category:'].get()
-        condition = self.donation_entries['Condition:'].get()
-        state = self.donation_state_var.get()
-        city = self.donation_city_var.get()
+        title = self.title_entry.get()
+        description = self.description_text.get('1.0', 'end-1c')
+        category = self.category_combobox.get()
+        condition = self.condition_combobox.get()
+        state = self.state_combobox.get()
+        city = self.city_combobox.get()
 
         # Validate required fields
         if not title or not description or not category or not condition or not state or not city:
@@ -88,59 +228,153 @@ class DonationFormPage:
 
     def clear_form(self):
         # Clear all form fields
-        self.donation_entries['Title:'].delete(0, 'end')
-        self.donation_entries['Description:'].delete('1.0', 'end')
-        self.donation_entries['Category:'].set('')
-        self.donation_entries['Condition:'].set('')
-        self.donation_state_var.set('')
-        self.donation_city_var.set('')
-        # Reset character counters
-        self.update_char_counter(self.donation_entries['Title:'], self.title_counter, 100)
-        self.update_char_counter(self.donation_entries['Description:'], self.desc_counter, 500, is_text=True)
+        self.title_entry.delete(0, 'end')
+        self.description_text.delete('1.0', 'end')
+        self.category_combobox.set("Select category")
+        self.condition_combobox.set("Select condition")
+        self.state_combobox.set("Select state")
+        self.city_combobox.set("Select city")
         # Clear image paths and previews
         self.image_paths = []
         for widget in self.preview_frame.winfo_children():
             widget.destroy()
         
     def preview_donation(self):
-        # Get all the donation details
-        title = self.donation_entries['Title:'].get()
-        description = self.donation_entries['Description:'].get('1.0', 'end-1c')
-        category = self.donation_entries['Category:'].get()
-        condition = self.donation_entries['Condition:'].get()
-        state = self.donation_state_var.get()
-        city = self.donation_city_var.get()
+        """Show a preview of the donation before submitting"""
+        # Validate required fields
+        title = self.title_entry.get()
+        description = self.description_text.get('1.0', 'end-1c')
+        category = self.category_combobox.get()
+        condition = self.condition_combobox.get()
+        location = f"{self.city_combobox.get()}, {self.state_combobox.get()}"
         
+        if not all([title, description, category, condition, location]):
+            messagebox.showerror("Error", "Please fill in all required fields")
+            return
+            
         # Create preview window
-        preview_window = tk.Toplevel(self.parent)
-        preview_window.title("Donation Preview")
-        preview_window.geometry("500x400")
+        preview = tk.Toplevel(self)
+        preview.title("Preview Donation")
+        preview.geometry("800x600")
+        preview.configure(bg=COLORS['background'])
+        preview.transient(self)
+        preview.grab_set()
         
-        # Style the preview window
-        preview_frame = ttk.Frame(preview_window, style='Card.TFrame', padding=20)
-        preview_frame.pack(fill='both', expand=True)
+        # Create main container
+        main_frame = ttk.Frame(preview, style='Card.TFrame')
+        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Display donation details
-        ttk.Label(preview_frame, text="Donation Preview", style='Title.TLabel').pack(pady=(0, 20))
+        # Left side - Image preview
+        image_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        image_frame.pack(side='left', fill='both', expand=True, padx=(0, 10))
         
-        details = [
-            ("Title", title),
-            ("Description", description),
-            ("Category", category),
-            ("Condition", condition),
-            ("Location", f"{city}, {state}" if city and state else "Not specified")
-        ]
+        # Image display with shadow effect
+        image_label = ttk.Label(image_frame, style='Card.TLabel')
+        image_label.pack(fill='both', expand=True, padx=10, pady=10)
         
-        for label, value in details:
-            detail_frame = ttk.Frame(preview_frame, style='Card.TFrame')
-            detail_frame.pack(fill='x', pady=5)
-            ttk.Label(detail_frame, text=f"{label}:", style='Subtitle.TLabel').pack(anchor='w')
-            ttk.Label(detail_frame, text=value, wraplength=400).pack(anchor='w', padx=20)
+        if self.image_paths:
+            try:
+                img = Image.open(self.image_paths[0])
+                img.thumbnail((400, 400))  # Maintain aspect ratio
+                photo = ImageTk.PhotoImage(img)
+                image_label.configure(image=photo)
+                image_label.image = photo
+            except:
+                image_label.configure(text="Error loading image")
+        else:
+            image_label.configure(text="No image selected")
         
-        # Close button
-        ModernUI.create_button(preview_frame, "Close Preview", preview_window.destroy).pack(pady=20)
+        # Right side - Details preview
+        details_frame = ttk.Frame(main_frame, style='Card.TFrame')
+        details_frame.pack(side='right', fill='both', expand=True, padx=(10, 0))
         
-    def upload_image(self):
+        # Title
+        title_label = ttk.Label(
+            details_frame,
+            text=title,
+            font=('Segoe UI', 24, 'bold'),
+            foreground=COLORS['primary'],
+            style='Card.TLabel',
+            wraplength=350
+        )
+        title_label.pack(fill='x', pady=(0, 10))
+        
+        # Category and condition badges
+        badge_frame = ttk.Frame(details_frame, style='Card.TFrame')
+        badge_frame.pack(fill='x', pady=(0, 15))
+        
+        category_label = ttk.Label(
+            badge_frame,
+            text=category,
+            style='CategoryBadge.TLabel'
+        )
+        category_label.pack(side='left', padx=(0, 5))
+        
+        condition_label = ttk.Label(
+            badge_frame,
+            text=condition,
+            style='ConditionBadge.TLabel'
+        )
+        condition_label.pack(side='left')
+        
+        # Description
+        desc_label = ttk.Label(
+            details_frame,
+            text="Description",
+            font=('Segoe UI', 12, 'bold'),
+            style='Card.TLabel'
+        )
+        desc_label.pack(fill='x', pady=(0, 5))
+        
+        desc_text = tk.Text(
+            details_frame,
+            wrap=tk.WORD,
+            height=6,
+            font=('Segoe UI', 10),
+            bg=COLORS['card'],
+            fg=COLORS['text']
+        )
+        desc_text.insert('1.0', description)
+        desc_text.configure(state='disabled')
+        desc_text.pack(fill='both', expand=True, pady=(0, 15))
+        
+        # Location info
+        info_frame = ttk.Frame(details_frame, style='Card.TFrame')
+        info_frame.pack(fill='x', pady=(0, 15))
+        
+        location_frame = ttk.Frame(info_frame, style='Card.TFrame')
+        location_frame.pack(fill='x', pady=2)
+        ttk.Label(
+            location_frame,
+            text="",
+            style='Card.TLabel'
+        ).pack(side='left')
+        ttk.Label(
+            location_frame,
+            text=location,
+            style='Card.TLabel'
+        ).pack(side='left', padx=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(details_frame, style='Card.TFrame')
+        button_frame.pack(fill='x', pady=(15, 0))
+        
+        ModernUI.create_button(
+            button_frame,
+            "Submit Donation",
+            lambda: [self.submit_donation(), preview.destroy()],
+            width=20
+        ).pack(side='left', padx=5)
+        
+        ModernUI.create_button(
+            button_frame,
+            "Edit",
+            preview.destroy,
+            style='Secondary.TButton',
+            width=15
+        ).pack(side='right', padx=5)
+    
+    def upload_images(self):
         # Open file dialog to select image
         file_paths = filedialog.askopenfilenames(
             title="Select Images",
@@ -179,14 +413,11 @@ class DonationFormPage:
             # Create a remove button
             remove_btn = ttk.Button(
                 img_preview_frame, 
-                text="✕", 
+                text="", 
                 width=2,
                 command=lambda fp=file_path, frame=img_preview_frame: self._remove_image(fp, frame)
             )
             remove_btn.pack(pady=(0, 5))
-            
-            # Add to list of previews
-            self.image_previews.append((file_path, img_preview_frame))
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load image: {str(e)}")
@@ -199,145 +430,11 @@ class DonationFormPage:
         # Remove the preview from the UI
         frame.destroy()
         
-        # Remove from previews list
-        for i, (path, preview_frame) in enumerate(self.image_previews):
-            if path == file_path:
-                self.image_previews.pop(i)
-                break
-        
-    def create_frame(self):
-        self.frame = ModernUI.create_card(self.parent)
-        
-        # Create a scrollable canvas for the content
-        canvas = tk.Canvas(self.frame, bg=COLORS['card'], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=800)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack the scrollbar and canvas
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True, padx=20)
-        
-        # Header
-        header_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        header_frame.pack(fill='x', pady=(20, 30))
-        
-        ttk.Label(header_frame, text="Donate an Item", style='Title.TLabel').pack()
-        ttk.Label(header_frame, text="Share your items with those in need", style='Subtitle.TLabel').pack()
-        
-        # Main content
-        content = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        content.pack(fill='x', padx=50)
-        
-        self.donation_entries = {}
-        
-        # Title field with character counter
-        title_frame = ttk.Frame(content, style='Card.TFrame')
-        title_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(title_frame, text="Title", style='Subtitle.TLabel').pack(anchor='w')
-        title_entry = ModernUI.create_entry(title_frame, width=50)
-        title_entry.pack(side='left', pady=(5, 0))
-        self.donation_entries['Title:'] = title_entry
-        self.title_counter = ttk.Label(title_frame, text="0/100", style='Subtitle.TLabel')
-        self.title_counter.pack(side='left', padx=10)
-        title_entry.bind('<KeyRelease>', lambda e: self.update_char_counter(title_entry, self.title_counter, 100))
-        
-        # Description field with character counter
-        desc_frame = ttk.Frame(content, style='Card.TFrame')
-        desc_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(desc_frame, text="Description", style='Subtitle.TLabel').pack(anchor='w')
-        desc_text = tk.Text(desc_frame, height=4, width=50, wrap='word')
-        desc_text.configure(font=('Segoe UI', 10), padx=10, pady=5)
-        desc_text.pack(side='left', pady=(5, 0))
-        self.donation_entries['Description:'] = desc_text
-        self.desc_counter = ttk.Label(desc_frame, text="0/500", style='Subtitle.TLabel')
-        self.desc_counter.pack(side='left', padx=10, anchor='n')
-        desc_text.bind('<KeyRelease>', lambda e: self.update_char_counter(desc_text, self.desc_counter, 500, is_text=True))
-        
-        # Category dropdown with icon
-        cat_frame = ttk.Frame(content, style='Card.TFrame')
-        cat_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(cat_frame, text="📦 Category", style='Subtitle.TLabel').pack(anchor='w')
-        self.donation_entries['Category:'] = ModernUI.create_dropdown(cat_frame, CATEGORIES, "Select Category", width=47)
-        self.donation_entries['Category:'].pack(pady=(5, 0))
-        
-        # Condition dropdown with icon
-        cond_frame = ttk.Frame(content, style='Card.TFrame')
-        cond_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(cond_frame, text="✨ Condition", style='Subtitle.TLabel').pack(anchor='w')
-        self.donation_entries['Condition:'] = ModernUI.create_dropdown(cond_frame, CONDITIONS, "Select Condition", width=47)
-        self.donation_entries['Condition:'].pack(pady=(5, 0))
-        
-        # Replace the old location dropdown with new location selector
-        loc_frame = ttk.Frame(content, style='Card.TFrame')
-        loc_frame.pack(fill='x', pady=(0, 20))
-        location_selector = ModernUI.create_location_selector(loc_frame, self.donation_state_var, self.donation_city_var)
-        location_selector.pack(fill='x')
-        
-        # Store the location variables
-        self.donation_entries['State:'] = self.donation_state_var
-        self.donation_entries['City:'] = self.donation_city_var
-        
-        # Image upload
-        img_frame = ttk.Frame(content, style='Card.TFrame')
-        img_frame.pack(fill='x', pady=(0, 20))
-        ttk.Label(img_frame, text="📸 Upload Images", style='Subtitle.TLabel').pack(anchor='w')
-        
-        # Create a frame for upload button and image previews
-        upload_section = ttk.Frame(img_frame, style='Card.TFrame')
-        upload_section.pack(fill='x', pady=(5, 0))
-        
-        # Upload button
-        ModernUI.create_button(
-            upload_section, 
-            "Choose Files", 
-            self.upload_image, 
-            style='Secondary.TButton'
-        ).pack(side='left', pady=(5, 0))
-        
-        # Image preview area
-        preview_container = ttk.Frame(img_frame, style='Card.TFrame')
-        preview_container.pack(fill='x', pady=(10, 0))
-        
-        # Create scrollable frame for image previews
-        preview_canvas = tk.Canvas(preview_container, height=120, bg=COLORS['card'], highlightthickness=0)
-        preview_scrollbar = ttk.Scrollbar(preview_container, orient="horizontal", command=preview_canvas.xview)
-        self.preview_frame = ttk.Frame(preview_canvas, style='Card.TFrame')
-        
-        self.preview_frame.bind(
-            "<Configure>",
-            lambda e: preview_canvas.configure(scrollregion=preview_canvas.bbox("all"))
-        )
-        
-        preview_canvas.create_window((0, 0), window=self.preview_frame, anchor="nw")
-        preview_canvas.configure(xscrollcommand=preview_scrollbar.set)
-        
-        # Pack the scrollbar and canvas
-        preview_scrollbar.pack(side="bottom", fill="x")
-        preview_canvas.pack(side="top", fill="both", expand=True)
-        
-        # Add note about max images
-        ttk.Label(
-            img_frame, 
-            text="Max 5 images, JPG/PNG format only", 
-            foreground=COLORS['text_light']
-        ).pack(anchor='w', pady=(5, 0))
-        
-        # Buttons at the bottom
-        button_frame = ttk.Frame(content, style='Card.TFrame')
-        button_frame.pack(fill='x', pady=30)
-        
-        ModernUI.create_button(button_frame, "Preview Donation", self.preview_donation, width=20).pack(side='left', padx=5)
-        ModernUI.create_button(button_frame, "Submit Donation", self.submit_donation, width=20).pack(side='left', padx=5)
-        ModernUI.create_button(button_frame, "Back to Dashboard", 
-                             lambda: self.show_frame('dashboard'), 
-                             style='Secondary.TButton', width=20).pack(side='right', padx=5)
-        
-        # No need to store frame in frames dictionary as it's managed by the parent class
+    def update_cities(self, *args):
+        state = self.state_combobox.get()
+        if state in CITIES_BY_STATE:
+            self.city_combobox['values'] = CITIES_BY_STATE[state]
+            self.city_combobox.set("Select city")
+        else:
+            self.city_combobox['values'] = []
+            self.city_combobox.set("")

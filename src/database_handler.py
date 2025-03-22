@@ -44,6 +44,7 @@ class DatabaseHandler:
                 print(f"MySQL connection attempt {retry_count} failed: {e}")
                 if retry_count < max_retries:
                     # Wait before retrying (exponential backoff)
+                    import time
                     time.sleep(2 ** retry_count)
         
         raise Exception(f"Failed to connect to MySQL database after {max_retries} attempts. Last error: {last_error}")
@@ -120,7 +121,7 @@ class DatabaseHandler:
                     print(f"MySQL Error during user creation: {err}")
                     self.connection.rollback()
                     return False, "Database error during user creation"
-            except (Error, sqlite3.Error) as e:
+            except (Error, Exception) as e:
                 print(f"Error creating user: {e}")
                 return False, "Error creating user account"
 
@@ -168,3 +169,86 @@ class DatabaseHandler:
         finally:
             if cursor:
                 cursor.close()
+
+    def get_donations(self, search_query=None, category=None, condition=None, location=None, donation_id=None):
+        """Get donations based on search criteria"""
+        self.ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        
+        try:
+            query = """
+                SELECT d.*, u.full_name as donor_name, u.email as donor_email
+                FROM donations d
+                JOIN users u ON d.donor_id = u.unique_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if donation_id:
+                query += " AND d.unique_id = %s"
+                params.append(donation_id)
+                
+            if search_query:
+                query += " AND (d.title LIKE %s OR d.description LIKE %s)"
+                search_pattern = f"%{search_query}%"
+                params.extend([search_pattern, search_pattern])
+                
+            if category:
+                query += " AND d.category = %s"
+                params.append(category)
+                
+            if condition:
+                query += " AND d.condition = %s"
+                params.append(condition)
+                
+            if location:
+                query += " AND d.location = %s"
+                params.append(location)
+                
+            query += " ORDER BY d.created_at DESC"
+            
+            cursor.execute(query, params)
+            donations = cursor.fetchall()
+            return donations
+            
+        except Error as e:
+            print(f"Error getting donations: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    def save_profile_changes(self, user_id, email, full_name, location):
+        """Save user profile changes"""
+        self.ensure_connection()
+        cursor = self.connection.cursor()
+        
+        try:
+            # Check if email already exists for another user
+            cursor.execute(
+                """SELECT COUNT(*) FROM users 
+                   WHERE LOWER(email) = LOWER(%s) AND unique_id != %s
+                """, 
+                (email, user_id)
+            )
+            email_count = cursor.fetchone()[0]
+            
+            if email_count > 0:
+                return False, "Email already exists"
+            
+            # Update user profile
+            cursor.execute(
+                """UPDATE users 
+                   SET email = %s, full_name = %s, location = %s
+                   WHERE unique_id = %s
+                """,
+                (email, full_name, location, user_id)
+            )
+            self.connection.commit()
+            return True, "Profile updated successfully"
+            
+        except Error as e:
+            print(f"Error updating profile: {e}")
+            self.connection.rollback()
+            return False, f"Database error: {str(e)}"
+        finally:
+            cursor.close()

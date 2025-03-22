@@ -1,14 +1,13 @@
 import tkinter as tk
 from tkinter import ttk
-from src.ui.components import ModernUI
+from src.ui.modern_ui import ModernUI
 from datetime import datetime
 
 class DashboardPage:
-    def __init__(self, parent, show_frame_callback, current_user=None, get_notifications_callback=None):
+    def __init__(self, parent, show_frame_callback, current_user=None):
         self.parent = parent
         self.show_frame = show_frame_callback
         self.current_user = current_user
-        self.get_notifications_callback = get_notifications_callback
         self.frame = None
         self.welcome_label = None
         self.notifications_frame = None
@@ -36,7 +35,7 @@ class DashboardPage:
             self.welcome_label.configure(text=welcome_text)
             
             # Update notifications if the callback is available
-            if self.get_notifications_callback and hasattr(self, 'current_user') and self.current_user:
+            if hasattr(self, 'get_notifications_callback') and self.get_notifications_callback and hasattr(self, 'current_user') and self.current_user:
                 self.update_notifications()
                 
     def create_frame(self):
@@ -114,7 +113,7 @@ class DashboardPage:
     
     def update_notifications(self):
         """Update the notifications section with recent notifications"""
-        if not self.get_notifications_callback or not hasattr(self, 'current_user') or not self.current_user:
+        if not hasattr(self, 'get_notifications_callback') or not self.get_notifications_callback or not hasattr(self, 'current_user') or not self.current_user:
             return
             
         # Clear existing notifications

@@ -1,92 +1,107 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from datetime import datetime
+from src.ui.modern_ui import ModernUI
 
 class ChatPage:
     def __init__(self, parent, get_contacts_callback, get_messages_callback, send_message_callback, show_frame_callback):
-        self.frame = ttk.Frame(parent)
+        self.parent = parent
         self.get_contacts = get_contacts_callback
         self.get_messages = get_messages_callback
         self.send_message = send_message_callback
         self.show_frame = show_frame_callback
-        
-        # Initialize selected chat user
+        self.frame = None
         self.selected_chat_user = None
+        self.create_frame()
         
-        # Create chat interface
-        self.create_widgets()
+    def create_frame(self):
+        self.frame = ModernUI.create_card(self.parent)
         
-    def create_widgets(self):
         # Main container with two panes
         paned_window = ttk.PanedWindow(self.frame, orient=tk.HORIZONTAL)
-        paned_window.pack(fill='both', expand=True, padx=10, pady=10)
+        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Left pane - Contacts list
-        contacts_frame = ttk.Frame(paned_window)
+        # Left panel for contacts
+        contacts_frame = ttk.Frame(paned_window, style='Card.TFrame')
         paned_window.add(contacts_frame, weight=1)
         
         # Contacts header
-        ttk.Label(contacts_frame, text="Contacts", font=('Segoe UI', 14, 'bold')).pack(fill='x', pady=(0, 10))
+        ttk.Label(contacts_frame, text="Contacts", font=('Poppins', 16, 'bold')).pack(pady=10)
         
         # Contacts list
-        self.contacts_listbox = tk.Listbox(contacts_frame, font=('Segoe UI', 11))
-        self.contacts_listbox.pack(fill='both', expand=True)
-        self.contacts_listbox.bind('<<ListboxSelect>>', self.on_contact_selected)
+        self.contacts_list = ttk.Treeview(contacts_frame, selectmode='browse', show='tree')
+        self.contacts_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.contacts_list.bind('<<TreeviewSelect>>', self.on_contact_select)
         
-        # Right pane - Chat area
-        chat_frame = ttk.Frame(paned_window)
-        paned_window.add(chat_frame, weight=3)
+        # Right panel for chat
+        chat_frame = ttk.Frame(paned_window, style='Card.TFrame')
+        paned_window.add(chat_frame, weight=2)
         
         # Chat header
-        self.chat_header = ttk.Label(chat_frame, text="Select a contact to start chatting", font=('Segoe UI', 14, 'bold'))
-        self.chat_header.pack(fill='x', pady=(0, 10))
+        self.chat_header = ttk.Label(chat_frame, text="Select a contact", font=('Poppins', 16, 'bold'))
+        self.chat_header.pack(pady=10)
         
-        # Messages area
-        self.messages_area = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD, font=('Segoe UI', 10), state='disabled')
-        self.messages_area.pack(fill='both', expand=True, pady=(0, 10))
+        # Chat messages area
+        self.messages_area = scrolledtext.ScrolledText(
+            chat_frame,
+            wrap=tk.WORD,
+            font=('Poppins', 10),
+            height=20,
+            state='disabled'
+        )
+        self.messages_area.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Message input area
-        input_frame = ttk.Frame(chat_frame)
-        input_frame.pack(fill='x')
+        input_frame = ttk.Frame(chat_frame, style='Card.TFrame')
+        input_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        self.message_entry = ttk.Entry(input_frame, font=('Segoe UI', 11))
-        self.message_entry.pack(side='left', fill='x', expand=True)
-        self.message_entry.bind('<Return>', self.on_send_message)
+        self.message_input = ModernUI.create_entry(input_frame, placeholder="Type your message...")
+        self.message_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
-        send_button = ttk.Button(input_frame, text="Send", command=self.on_send_message)
-        send_button.pack(side='right', padx=(10, 0))
+        send_button = ModernUI.create_button(input_frame, "Send", self.send_message_handler)
+        send_button.pack(side=tk.RIGHT)
+        
+        # Navigation buttons
+        nav_frame = ttk.Frame(self.frame, style='Card.TFrame')
+        nav_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        back_button = ModernUI.create_button(
+            nav_frame,
+            "Back to Dashboard",
+            lambda: self.show_frame('dashboard'),
+            style='Secondary.TButton'
+        )
+        back_button.pack(side=tk.LEFT)
         
         # Load contacts
         self.load_contacts()
     
     def load_contacts(self):
         # Clear existing contacts
-        self.contacts_listbox.delete(0, tk.END)
+        for item in self.contacts_list.get_children():
+            self.contacts_list.delete(item)
         
         # Get contacts from database
         contacts = self.get_contacts()
         
         # Add contacts to listbox
         for contact in contacts:
-            self.contacts_listbox.insert(tk.END, contact['username'])
-            # Store the contact data in the listbox
-            self.contacts_listbox.itemconfig(tk.END, {'contact_data': contact})
+            self.contacts_list.insert('', 'end', text=contact['username'], values=(contact['unique_id'],))
     
-    def on_contact_selected(self, event):
+    def on_contact_select(self, event):
         # Get selected index
-        selection = self.contacts_listbox.curselection()
+        selection = self.contacts_list.selection()
         if not selection:
             return
             
         # Get contact data
-        index = selection[0]
-        contact_data = self.contacts_listbox.itemcget(index, 'contact_data')
+        contact_data = self.contacts_list.item(selection[0], 'values')
         
         # Set selected chat user
-        self.selected_chat_user = contact_data
+        self.selected_chat_user = {'unique_id': contact_data[0]}
         
         # Update chat header
-        self.chat_header.config(text=f"Chat with {contact_data['username']}")
+        self.chat_header.config(text=f"Chat with {self.contacts_list.item(selection[0], 'text')}")
         
         # Load messages
         self.update_chat_messages()
@@ -131,13 +146,13 @@ class ChatPage:
         # Scroll to bottom
         self.messages_area.see(tk.END)
     
-    def on_send_message(self, event=None):
+    def send_message_handler(self):
         if not self.selected_chat_user:
             messagebox.showinfo("Info", "Please select a contact first")
             return
             
         # Get message content
-        content = self.message_entry.get().strip()
+        content = self.message_input.get().strip()
         if not content:
             return
             
@@ -149,7 +164,7 @@ class ChatPage:
         
         if success:
             # Clear message entry
-            self.message_entry.delete(0, tk.END)
+            self.message_input.delete(0, tk.END)
             
             # Update chat messages
             self.update_chat_messages()

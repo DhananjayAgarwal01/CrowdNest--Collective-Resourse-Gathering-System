@@ -1,9 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from src.ui.components import ModernUI
+from src.ui.modern_ui import ModernUI
 from src.constants import STATES
 
-class RegisterPage:
+class RegistrationPage:
     def __init__(self, parent, register_callback, show_frame_callback):
         self.parent = parent
         self.register_callback = register_callback
