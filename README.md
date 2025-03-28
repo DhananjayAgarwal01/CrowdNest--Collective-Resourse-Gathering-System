@@ -96,8 +96,9 @@ This project is licensed under the MIT License.
 
 ## Contact
 Dhananjay Agarwal
-- Email: dhananjay.agarwal@example.com
-- LinkedIn: [Your LinkedIn Profile]
+- Email: dhananjay.ag007@gmail.com
+- Website: Dhananjay-Agarwal.onrender.me
+- LinkedIn: https://www.linkedin.com/in/dhananjay-agarwal-58bb542a1/
 
 ## Acknowledgments
 - Open-source community
