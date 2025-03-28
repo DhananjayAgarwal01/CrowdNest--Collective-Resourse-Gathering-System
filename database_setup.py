@@ -1,5 +1,5 @@
-import mysql.connector
 import os
+import mysql.connector
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -80,6 +80,8 @@ def create_tables():
             state VARCHAR(50) NOT NULL,
             city VARCHAR(50) NOT NULL,
             image_path LONGTEXT,
+            image_data LONGBLOB,
+            image_type VARCHAR(50),
             status ENUM('available', 'reserved', 'donated', 'pending', 'completed') DEFAULT 'available',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -113,6 +115,44 @@ def create_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
         print("Requests table created or already exists.")
+
+        # Donation Requests table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS donation_requests (
+            unique_id VARCHAR(36) PRIMARY KEY,
+            requester_id VARCHAR(36) NOT NULL,
+            donation_id VARCHAR(36) NOT NULL,
+            request_message TEXT,
+            status ENUM('pending', 'approved', 'rejected', 'completed') DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (requester_id) REFERENCES users(unique_id) ON DELETE CASCADE,
+            FOREIGN KEY (donation_id) REFERENCES donations(unique_id) ON DELETE CASCADE,
+            INDEX idx_status (status),
+            INDEX idx_requester (requester_id),
+            INDEX idx_donation (donation_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        print("Donation Requests table created or already exists.")
+
+        # Email Communications table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS email_communications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            sender_id VARCHAR(36) NULL,
+            recipient_email VARCHAR(255) NOT NULL,
+            subject VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status ENUM('sent', 'failed', 'pending') DEFAULT 'sent',
+            
+            FOREIGN KEY (sender_id) REFERENCES users(unique_id) ON DELETE SET NULL,
+            INDEX idx_sender (sender_id),
+            INDEX idx_recipient (recipient_email),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        print("Email Communications table created or already exists.")
 
         # Re-enable foreign key checks
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")

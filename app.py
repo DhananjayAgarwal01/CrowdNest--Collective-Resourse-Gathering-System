@@ -29,7 +29,12 @@ class CrowdNestApp:
         ModernUI.setup_styles()
         
         # Initialize database handler
-        self.db = DatabaseHandler()
+        self.db = DatabaseHandler(
+            host=os.getenv('DB_HOST', 'localhost'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD', '12345678'),
+            database=os.getenv('DB_NAME', 'CrowdNest')
+        )
         
         # Set root window properties
         root.title("CrowdNest - Collective Resource Gathering")
@@ -173,11 +178,11 @@ class CrowdNestApp:
             messagebox.showerror("Registration Error", str(e))
             return False
 
-    def submit_donation(self, title, description, category, condition, state, city, image_data):
+    def submit_donation(self, title, description, category, condition, state, city, image_data, image_type=None):
         """Handle donation submission"""
         try:
             # Add donation to database
-            success = self.db.add_donation(
+            success, message, donation_data = self.db.create_donation(
                 donor_id=self.current_user['unique_id'],
                 title=title,
                 description=description,
@@ -185,7 +190,8 @@ class CrowdNestApp:
                 condition=condition,
                 state=state,
                 city=city,
-                image_path=image_data
+                image_data=image_data,
+                image_type=image_type
             )
             
             if success:
@@ -193,7 +199,7 @@ class CrowdNestApp:
                 self.show_frame('DonationListPage')
                 return True
             else:
-                messagebox.showerror("Error", "Failed to submit donation")
+                messagebox.showerror("Error", message)
                 return False
                 
         except Exception as e:

@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from src.ui.modern_ui import ModernUI
-from src.utils.email_validator import EmailValidator
 from src.constants import COLORS, CATEGORIES, LOCATIONS, STATES
 from src.database.database_handler import DatabaseHandler
 
@@ -24,24 +23,51 @@ class RequestListPage:
             style='Title.TLabel'
         ).pack(pady=(0, 20))
         
-        # Search frame
+        # Search and filter frame
+        self._create_search_frame()
+        
+        # Requests treeview
+        self._create_requests_treeview()
+        
+        # Load initial requests
+        self.refresh_requests()
+    
+    def _create_search_frame(self):
+        """Create search and filter components"""
         search_frame = ttk.Frame(self.frame)
         search_frame.pack(fill='x', pady=(0, 10))
         
         # Search entry
         self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=30)
         search_entry.pack(side='left', padx=5)
+        search_entry.insert(0, "Search requests...")
+        search_entry.bind('<FocusIn>', lambda e: search_entry.delete(0, tk.END) if search_entry.get() == "Search requests..." else None)
+        search_entry.bind('<FocusOut>', lambda e: search_entry.insert(0, "Search requests...") if not search_entry.get() else None)
         
         # Category dropdown
         self.category_var = tk.StringVar()
-        category_combo = ttk.Combobox(search_frame, textvariable=self.category_var, values=list(CATEGORIES))
+        category_combo = ttk.Combobox(
+            search_frame, 
+            textvariable=self.category_var, 
+            values=['All'] + list(CATEGORIES), 
+            width=15, 
+            state='readonly'
+        )
+        category_combo.set('All')
         category_combo.pack(side='left', padx=5)
         
-        # Location dropdown
-        self.location_var = tk.StringVar()
-        location_combo = ttk.Combobox(search_frame, textvariable=self.location_var, values=list(LOCATIONS))
-        location_combo.pack(side='left', padx=5)
+        # Status dropdown
+        self.status_var = tk.StringVar()
+        status_combo = ttk.Combobox(
+            search_frame, 
+            textvariable=self.status_var, 
+            values=['All', 'Open', 'Fulfilled', 'Closed'], 
+            width=10, 
+            state='readonly'
+        )
+        status_combo.set('All')
+        status_combo.pack(side='left', padx=5)
         
         # Search button
         search_btn = ModernUI.create_button(
@@ -51,228 +77,127 @@ class RequestListPage:
             style='Primary.TButton'
         )
         search_btn.pack(side='left', padx=5)
+    
+    def _create_requests_treeview(self):
+        """Create treeview for displaying requests"""
+        # Columns
+        columns = ('title', 'category', 'requester', 'status', 'date')
         
-        # Create Treeview for requests
-        columns = ('title', 'category', 'location', 'requester', 'status', 'email')
-        self.requests_tree = ttk.Treeview(self.frame, columns=columns, show='headings', style='Treeview')
+        # Treeview with scrollbar
+        tree_frame = ttk.Frame(self.frame)
+        tree_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        self.requests_tree = ttk.Treeview(
+            tree_frame, 
+            columns=columns, 
+            show='headings', 
+            style='Treeview'
+        )
         
         # Define column headings
-        self.requests_tree.heading('title', text='Title')
-        self.requests_tree.heading('category', text='Category')
-        self.requests_tree.heading('location', text='Location')
-        self.requests_tree.heading('requester', text='Requester')
-        self.requests_tree.heading('status', text='Status')
-        self.requests_tree.heading('email', text='Contact Email')
+        self.requests_tree.heading('title', text='Request Title', command=lambda: self.sort_column('title', False))
+        self.requests_tree.heading('category', text='Category', command=lambda: self.sort_column('category', False))
+        self.requests_tree.heading('requester', text='Requester', command=lambda: self.sort_column('requester', False))
+        self.requests_tree.heading('status', text='Status', command=lambda: self.sort_column('status', False))
+        self.requests_tree.heading('date', text='Date', command=lambda: self.sort_column('date', False))
         
         # Define column widths
-        self.requests_tree.column('title', width=200)
-        self.requests_tree.column('category', width=100)
-        self.requests_tree.column('location', width=150)
-        self.requests_tree.column('requester', width=150)
-        self.requests_tree.column('status', width=100)
-        self.requests_tree.column('email', width=150)
+        self.requests_tree.column('title', width=250, anchor='w')
+        self.requests_tree.column('category', width=100, anchor='center')
+        self.requests_tree.column('requester', width=150, anchor='w')
+        self.requests_tree.column('status', width=100, anchor='center')
+        self.requests_tree.column('date', width=150, anchor='center')
         
-        # Add scrollbar to treeview
-        tree_scrollbar = ttk.Scrollbar(self.frame, orient='vertical', command=self.requests_tree.yview)
-        self.requests_tree.configure(yscrollcommand=tree_scrollbar.set)
+        # Scrollbars
+        tree_scrollbar_y = ttk.Scrollbar(tree_frame, orient='vertical', command=self.requests_tree.yview)
+        tree_scrollbar_x = ttk.Scrollbar(tree_frame, orient='horizontal', command=self.requests_tree.xview)
+        self.requests_tree.configure(yscrollcommand=tree_scrollbar_y.set, xscrollcommand=tree_scrollbar_x.set)
         
-        # Pack treeview and scrollbar
-        self.requests_tree.pack(side='top', fill='both', expand=True)
-        tree_scrollbar.pack(side='right', fill='y')
+        # Pack treeview and scrollbars
+        self.requests_tree.pack(side='left', fill='both', expand=True)
+        tree_scrollbar_y.pack(side='right', fill='y')
+        tree_scrollbar_x.pack(side='bottom', fill='x')
         
-        # Action frame
-        action_frame = ttk.Frame(self.frame, style='Card.TFrame')
-        action_frame.pack(fill='x', pady=10)
-        
-        # Back to dashboard button
-        ModernUI.create_button(
-            action_frame,
-            "Back to Dashboard",
-            lambda: self.show_frame('dashboard'),
-            style='Secondary.TButton'
-        ).pack(side='right', padx=5)
-        
-        # View details button
-        ModernUI.create_button(
-            action_frame,
-            "View Details",
-            self.view_request_details,
-            style='Primary.TButton'
-        ).pack(side='left', padx=5)
-        
-        # Send email button
-        ModernUI.create_button(
-            action_frame,
-            "Contact Requester",
-            self.send_email_dialog,
-            style='Primary.TButton'
-        ).pack(side='left', padx=5)
-        
-        # Delete button (only visible to request owner)
-        self.delete_btn = ModernUI.create_button(
-            action_frame,
-            "Delete Request",
-            self.delete_request,
-            style='Danger.TButton'
-        )
-        self.delete_btn.pack(side='left', padx=5)
-        self.delete_btn.pack_forget()  # Initially hidden
-        
-        # Load initial requests
-        self.refresh_requests()
+        # Bind double-click event
+        self.requests_tree.bind('<Double-1>', self.view_request_details)
     
     def search_requests(self):
-        """Search requests based on criteria"""
-        search_query = self.search_var.get()
-        category = self.category_var.get() or None
-        location = self.location_var.get() or None
+        """Search and filter requests based on user input"""
+        search_term = self.search_var.get().lower()
+        category = self.category_var.get()
+        status = self.status_var.get()
         
-        requests = self.db.search_requests(search_query, category, location)
-        self.refresh_requests(requests)
-    
-    def refresh_requests(self, requests=None):
-        """Populate the treeview with requests"""
-        # Clear existing items
-        for item in self.requests_tree.get_children():
-            self.requests_tree.delete(item)
-        
-        if requests is None:
-            requests = self.db.search_requests()
-        
-        # Add requests to treeview
-        for request in requests:
-            item_id = self.requests_tree.insert('', 'end', values=(
-                request['title'],
-                request['category'],
-                f"{request['city']}, {request['state']}",
-                request['requester_name'],
-                request['status'],
-                request['requester_email']
-            ))
-            # Store request ID in the item
-            self.requests_tree.set(item_id, 'unique_id', request['unique_id'])
+        # Fetch requests from database with filters
+        try:
+            requests = self.db.search_requests(
+                search_query=search_term if search_term != "search requests..." else None,
+                category=category if category != 'All' else None,
+                status=status.lower() if status != 'All' else None
+            )
             
-            # Show delete button if user is the requester
-            selected_items = self.requests_tree.selection()
-            if selected_items:
-                request_id = self.requests_tree.set(selected_items[0], 'unique_id')
-                if request.get('requester_id') == self.user_info['unique_id']:
-                    self.delete_btn.pack(side='left', padx=5)
-                else:
-                    self.delete_btn.pack_forget()
+            # Clear existing items
+            for item in self.requests_tree.get_children():
+                self.requests_tree.delete(item)
+            
+            # Populate treeview
+            for request in requests:
+                self.requests_tree.insert('', 'end', values=(
+                    request['title'], 
+                    request['category'], 
+                    request.get('requester_name', 'Unknown'),
+                    request['status'].capitalize(), 
+                    request['created_at'].strftime('%Y-%m-%d %H:%M')
+                ))
+        except Exception as e:
+            messagebox.showerror("Search Error", str(e))
     
-    def view_request_details(self):
-        """Display detailed information about the selected request"""
-        selected_items = self.requests_tree.selection()
-        if not selected_items:
-            messagebox.showerror("Error", "Please select a request to view")
-            return
-        
-        request_id = self.requests_tree.set(selected_items[0], 'unique_id')
-        request = self.db.get_request_details(request_id)
-        
-        if not request:
-            messagebox.showerror("Error", "Could not fetch request details")
-            return
-        
-        # Create details window
-        details_window = tk.Toplevel(self.frame)
-        details_window.title("Request Details")
-        details_window.geometry("500x400")
-        
-        # Add details to window
-        content_frame = ttk.Frame(details_window, padding=20)
-        content_frame.pack(fill='both', expand=True)
-        
-        ttk.Label(content_frame, text=request['title'], style='Title.TLabel').pack(pady=(0, 10))
-        ttk.Label(content_frame, text=f"Category: {request['category']}").pack(anchor='w')
-        ttk.Label(content_frame, text=f"Location: {request['city']}, {request['state']}").pack(anchor='w')
-        ttk.Label(content_frame, text=f"Requester: {request['requester_name']}").pack(anchor='w')
-        ttk.Label(content_frame, text=f"Status: {request['status']}").pack(anchor='w')
-        ttk.Label(content_frame, text=f"Contact: {request['requester_email']}").pack(anchor='w')
-        
-        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=10)
-        description_frame.pack(fill='both', expand=True, pady=10)
-        
-        description_text = tk.Text(description_frame, wrap='word', height=5, width=40)
-        description_text.insert('1.0', request['description'])
-        description_text.configure(state='disabled')
-        description_text.pack(fill='both', expand=True)
-    
-    def delete_request(self):
-        """Delete the selected request"""
-        selected_items = self.requests_tree.selection()
-        if not selected_items:
-            messagebox.showerror("Error", "Please select a request to delete")
-            return
-        
-        request_id = self.requests_tree.set(selected_items[0], 'unique_id')
-        
-        # Confirm deletion
-        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this request?"):
-            return
-        
-        # Delete request
-        if self.db.delete_request(request_id, self.user_info['unique_id']):
-            messagebox.showinfo("Success", "Request deleted successfully")
-            self.refresh_requests()
-        else:
-            messagebox.showerror("Error", "Failed to delete request")
-    
-    def send_email_dialog(self):
-        """Open dialog to send email"""
-        # Get selected item
+    def view_request_details(self, event):
+        """View details of selected request"""
         selected_item = self.requests_tree.selection()
         if not selected_item:
-            messagebox.showerror("Error", "Please select a request to contact")
             return
         
-        # Get email from selected row
-        values = self.requests_tree.item(selected_item[0])['values']
-        recipient_email = values[5]
+        # Get request details
+        request_details = self.requests_tree.item(selected_item)['values']
         
-        # Create email dialog
-        email_window = tk.Toplevel(self.frame)
-        email_window.title("Send Email")
-        email_window.geometry("400x300")
+        # Show details in a popup
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Request Details")
+        details_window.geometry("400x300")
         
-        # Subject
-        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
-        subject_entry = ttk.Entry(email_window, width=50)
-        subject_entry.pack(pady=(0,10))
+        # Details display
+        details_frame = ttk.Frame(details_window)
+        details_frame.pack(padx=20, pady=20, fill='both', expand=True)
         
-        # Message body
-        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
-        message_text = tk.Text(email_window, height=10, width=50)
-        message_text.pack(pady=(0,10))
+        details = [
+            ("Title", request_details[0]),
+            ("Category", request_details[1]),
+            ("Requester", request_details[2]),
+            ("Status", request_details[3]),
+            ("Date", request_details[4])
+        ]
         
-        # Send button
-        def send_email():
-            subject = subject_entry.get()
-            message = message_text.get("1.0", tk.END).strip()
-            
-            if not subject or not message:
-                messagebox.showerror("Error", "Subject and message cannot be empty")
-                return
-            
-            try:
-                # Send email using EmailValidator
-                EmailValidator.send_email(
-                    recipient_email, 
-                    subject, 
-                    message
-                )
-                messagebox.showinfo("Success", "Email sent successfully!")
-                email_window.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        for label, value in details:
+            ttk.Label(details_frame, text=f"{label}:", font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+            ttk.Label(details_frame, text=value).pack(anchor='w', pady=(0, 10))
+    
+    def sort_column(self, col, reverse):
+        """Sort treeview column"""
+        l = [(self.requests_tree.set(k, col), k) for k in self.requests_tree.get_children('')]
+        l.sort(reverse=reverse)
         
-        send_button = ModernUI.create_button(
-            email_window,
-            "Send Email",
-            send_email,
-            style='Primary.TButton'
-        )
-        send_button.pack(pady=10)
+        for index, (val, k) in enumerate(l):
+            self.requests_tree.move(k, '', index)
         
-        email_window.focus_force()
+        # Toggle sort direction
+        self.requests_tree.heading(col, command=lambda: self.sort_column(col, not reverse))
+    
+    def refresh_requests(self):
+        """Refresh requests list"""
+        # Reset search and filters
+        self.search_var.set("Search requests...")
+        self.category_var.set('All')
+        self.status_var.set('All')
+        
+        # Fetch and display requests
+        self.search_requests()

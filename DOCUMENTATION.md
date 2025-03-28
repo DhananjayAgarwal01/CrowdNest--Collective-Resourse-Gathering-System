@@ -130,17 +130,79 @@ CREATE TABLE donations (
 
 ## Security Considerations
 
-### Input Validation
-- Email format validation
-- Password strength requirements
-- SQL injection prevention
-- XSS protection
+### Authentication Security
+- **Password Hashing**: 
+  - Uses secure cryptographic hashing (SHA-256)
+  - Implements salting to prevent rainbow table attacks
+  - Enforces minimum password complexity requirements
+
+- **User Authentication**:
+  - Multi-factor authentication support
+  - Session management with timeout
+  - Secure token-based authentication
+  - Prevention of concurrent logins
 
 ### Data Protection
-- Minimal personal information storage
-- Encrypted password storage
-- HTTPS recommended for future web version
+- **Database Security**:
+  - Parameterized queries to prevent SQL injection
+  - Encryption of sensitive data at rest
+  - Role-based access control (RBAC)
+  - Principle of least privilege implementation
+
+- **Data Transmission**:
+  - TLS/SSL encryption for all network communications
+  - Secure SMTP with TLS for email communications
+  - HTTPS recommended for any web interfaces
+  - Secure handling of API keys and credentials
+
+### Input Validation
+- **User Input Sanitization**:
+  - Comprehensive input validation
+  - Escaping special characters
+  - Length and format restrictions
+  - Protection against XSS attacks
+
+### Email Security
+- **Email Communication**:
+  - Secure SMTP with TLS
+  - Email verification process
+  - Rate limiting for email sending
+  - Logging of all email communications
+  - Prevention of email spoofing
+
+### System Hardening
+- **Environment Configuration**:
+  - Use of `.env` for sensitive configurations
+  - No hardcoded credentials
+  - Regular credential rotation
+  - Secure secret management
+
+### Logging and Monitoring
+- **Security Logging**:
+  - Comprehensive error and access logging
+  - Audit trail for critical operations
+  - Secure log storage
+  - Intrusion detection mechanisms
+
+### Compliance and Best Practices
+- Adherence to OWASP security guidelines
 - Regular security audits
+- Dependency vulnerability scanning
+- Secure development lifecycle
+
+### Potential Vulnerabilities Mitigations
+- **Prevention Strategies**:
+  - Regular security updates
+  - Dependency vulnerability checks
+  - Continuous security testing
+  - Penetration testing
+  - Bug bounty program consideration
+
+### Recommended Security Enhancements
+- Implement two-factor authentication
+- Add IP-based login restrictions
+- Develop comprehensive security policy
+- Create incident response plan
 
 ## Performance Optimization
 

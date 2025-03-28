@@ -166,27 +166,27 @@ class EmailValidator:
             return False, error_msg
 
     @staticmethod
-    def send_communication_email(sender_name, sender_email, recipient_email, subject, body):
+    def send_communication_email(platform_email, platform_password, recipient_email, subject, body):
         """
-        Send communication email between users
+        Send an email using platform's email credentials
         
-        :param sender_name: Name of the sender
-        :param sender_email: Email of the sender
-        :param recipient_email: Email of the recipient
+        :param platform_email: Sender's email address
+        :param platform_password: Sender's email password/app password
+        :param recipient_email: Recipient's email address
         :param subject: Email subject
         :param body: Email body
         :return: Boolean indicating email sending success
         """
         try:
-            # Email configuration from environment variables
-            smtp_server = os.getenv('SMTP_SERVER')
-            smtp_port = int(os.getenv('SMTP_PORT'))
-            platform_email = os.getenv('SMTP_EMAIL')
-            smtp_password = os.getenv('SMTP_PASSWORD')
+            # Validate email inputs
+            if not platform_email or not platform_password or not recipient_email:
+                print("Invalid email configuration: Missing required parameters")
+                return False
             
-            # Validate input parameters
-            if not smtp_server or not smtp_port or not platform_email or not smtp_password:
-                raise ValueError("Missing SMTP configuration. Check your .env file.")
+            # Validate email format
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", recipient_email):
+                print(f"Invalid recipient email: {recipient_email}")
+                return False
             
             # Create message
             message = MIMEMultipart()
@@ -194,11 +194,8 @@ class EmailValidator:
             message['To'] = recipient_email
             message['Subject'] = subject
             
-            # Email body
-            full_body = f"""
-            From: {sender_name} ({sender_email})
-
-            {body}
+            # Construct full body
+            full_body = f"""{body}
 
             Sent via CrowdNest Platform
             """
@@ -206,13 +203,15 @@ class EmailValidator:
             message.attach(MIMEText(full_body, 'plain'))
             
             # Create SMTP session with detailed error handling
+            smtp_server = os.getenv('SMTP_SERVER')
+            smtp_port = int(os.getenv('SMTP_PORT'))
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.set_debuglevel(1)  # Enable debug output
                 server.ehlo()  # Can help diagnose connection issues
                 server.starttls()  # Enable security
                 
                 try:
-                    server.login(platform_email, smtp_password)
+                    server.login(platform_email, platform_password)
                 except smtplib.SMTPAuthenticationError as auth_err:
                     print(f"SMTP Authentication Error: {auth_err}")
                     print("Possible causes:")
@@ -222,7 +221,15 @@ class EmailValidator:
                     return False
                 
                 try:
+                    # Explicitly validate recipient email
+                    server.verify(recipient_email)
+                    
+                    # Send message
                     server.send_message(message)
+                except smtplib.SMTPRecipientsRefused as recipient_err:
+                    print(f"Recipient email refused: {recipient_err}")
+                    print(f"Invalid recipient: {recipient_email}")
+                    return False
                 except Exception as send_err:
                     print(f"Email sending error: {send_err}")
                     traceback.print_exc()
@@ -258,9 +265,13 @@ class EmailValidator:
         CrowdNest Team
         """
         
+        # Email configuration from environment variables
+        platform_email = os.getenv('SMTP_EMAIL')
+        platform_password = os.getenv('SMTP_PASSWORD')
+        
         return EmailValidator.send_communication_email(
-            requester_name,
-            requester_email,
+            platform_email,
+            platform_password,
             donor_email,
             subject,
             body

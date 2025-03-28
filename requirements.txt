@@ -1,6 +1,8 @@
 mysql-connector-python==8.2.0
-Pillow==9.5.0
 python-dotenv==1.0.0
-bcrypt>=3.2.0
-requests>=2.26.0
+Pillow==10.1.0
+pytest==7.4.3
 cryptography==41.0.5
+requests==2.31.0
+email-validator==2.1.0
+pysmtp==0.1.1

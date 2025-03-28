@@ -5,6 +5,7 @@ import io
 import base64
 from src.constants import COLORS, CATEGORIES, CONDITIONS, STATES, CITIES_BY_STATE
 from src.ui.modern_ui import ModernUI
+import os
 
 class DonationFormPage(ttk.Frame):
     def __init__(self, parent, submit_donation_callback, show_frame_callback):
@@ -172,57 +173,64 @@ class DonationFormPage(ttk.Frame):
         
     def submit_donation(self):
         """Submit the donation form"""
-        # Get form data
-        title = self.title_entry.get().strip()
-        description = self.description_text.get('1.0', tk.END).strip()
-        category = self.category_var.get()
-        condition = self.condition_var.get()
-        state = self.state_var.get()
-        city = self.city_combobox.get().strip()
-        
-        # Validate required fields
-        if not all([title, description, category, condition, state, city]):
-            messagebox.showerror(
-                "Error",
-                "Please fill in all required fields:\n" +
-                "- Title\n- Description\n- Category\n- Condition\n- State\n- City"
+        try:
+            # Validate inputs
+            title = self.title_entry.get().strip()
+            description = self.description_text.get("1.0", tk.END).strip()
+            category = self.category_var.get()
+            condition = self.condition_var.get()
+            state = self.state_var.get()
+            city = self.city_combobox.get().strip()
+
+            # Validate required fields
+            if not all([title, description, category, condition, state, city]):
+                messagebox.showerror("Validation Error", "Please fill in all required fields.")
+                return
+
+            # Prepare image data
+            image_data = None
+            image_type = None
+            if self.image_paths:
+                try:
+                    # Read first image (can be modified to support multiple images later)
+                    with open(self.image_paths[0], 'rb') as f:
+                        image_data = f.read()
+                    
+                    # Determine image type from file extension
+                    image_type = os.path.splitext(self.image_paths[0])[1][1:].lower()  # e.g., 'png', 'jpg'
+                except (IOError, IndexError) as e:
+                    messagebox.showerror("Image Error", f"Failed to process image: {str(e)}")
+                    return
+
+            # Submit donation
+            success = self.submit_donation_callback(
+                title=title,
+                description=description,
+                category=category,
+                condition=condition,
+                state=state,
+                city=city,
+                image_data=image_data,
+                image_type=image_type
             )
-            return
             
-        # Get image data if available
-        image_data = None
-        if self.image_paths:
-            try:
-                # Convert list of image paths to comma-separated string
-                image_data = ','.join(self.image_paths) if isinstance(self.image_paths, list) else self.image_paths
-            except Exception as e:
-                print(f"Error processing image paths: {e}")
-        
-        # Submit donation
-        success = self.submit_donation_callback(
-            title=title,
-            description=description,
-            category=category,
-            condition=condition,
-            state=state,
-            city=city,
-            image_data=image_data
-        )
-        
-        if success:
-            # Clear form
-            self.title_entry.delete(0, tk.END)
-            self.description_text.delete('1.0', tk.END)
-            self.category_var.set('')
-            self.condition_var.set('')
-            self.state_var.set('')
-            self.city_combobox.set("")
-            # Clear image paths and previews
-            self.image_paths = []
-            for widget in self.preview_frame.winfo_children():
-                widget.destroy()
-            # Redirect to dashboard
-            self.show_frame('dashboard')
+            if success:
+                # Clear form
+                self.title_entry.delete(0, tk.END)
+                self.description_text.delete('1.0', tk.END)
+                self.category_var.set('')
+                self.condition_var.set('')
+                self.state_var.set('')
+                self.city_combobox.set("")
+                # Clear image paths and previews
+                self.image_paths = []
+                for widget in self.preview_frame.winfo_children():
+                    widget.destroy()
+                # Redirect to dashboard
+                self.show_frame('dashboard')
+
+        except Exception as e:
+            messagebox.showerror("Unexpected Error", f"An error occurred: {str(e)}")
     
     def update_char_counter(self, widget, counter_label, max_chars, is_text=False):
         """Update character counter for text inputs"""
