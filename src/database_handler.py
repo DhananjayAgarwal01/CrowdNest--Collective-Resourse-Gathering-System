@@ -403,6 +403,141 @@ class DatabaseHandler:
             return False, f"Database error: {str(e)}"
         finally:
             cursor.close()
+    
+    def create_donation_request(self, donation_id, requester_id, requester_name, requester_email):
+        """Create a new donation request"""
+        self.ensure_connection()
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Check if request already exists
+            cursor.execute(
+                """SELECT * FROM donation_requests 
+                   WHERE donation_id = %s AND requester_id = %s
+                """,
+                (donation_id, requester_id)
+            )
+            existing_request = cursor.fetchone()
+            
+            if existing_request:
+                return False, "You have already requested this item"
+            
+            # Generate unique ID for request
+            request_id = str(uuid.uuid4())
+            
+            # Insert request
+            cursor.execute(
+                """INSERT INTO donation_requests (
+                    unique_id, donation_id, requester_id, requester_name,
+                    requester_email, status, created_at
+                ) VALUES (%s, %s, %s, %s, %s, 'pending', NOW())
+                """,
+                (request_id, donation_id, requester_id, requester_name, requester_email)
+            )
+            
+            self.connection.commit()
+            return True, "Request created successfully"
+            
+        except Error as e:
+            print(f"Error creating request: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False, f"Database error: {str(e)}"
+        
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_donation_requests(self, user_id):
+        """Get all donation requests for a user's donations"""
+        self.ensure_connection()
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            query = """
+                SELECT r.*, d.title as donation_title
+                FROM donation_requests r
+                JOIN donations d ON r.donation_id = d.unique_id
+                WHERE d.donor_id = %s
+                ORDER BY r.created_at DESC
+            """
+            
+            cursor.execute(query, (user_id,))
+            requests = cursor.fetchall()
+            
+            return requests
+            
+        except Error as e:
+            print(f"Error fetching requests: {e}")
+            return []
+        
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def get_request_details(self, request_id):
+        """Get details of a specific request"""
+        self.ensure_connection()
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            query = """
+                SELECT r.*, d.title as donation_title
+                FROM donation_requests r
+                JOIN donations d ON r.donation_id = d.unique_id
+                WHERE r.unique_id = %s
+            """
+            
+            cursor.execute(query, (request_id,))
+            request = cursor.fetchone()
+            
+            return request
+            
+        except Error as e:
+            print(f"Error fetching request details: {e}")
+            return None
+        
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def update_request_status(self, request_id, new_status):
+        """Update the status of a donation request"""
+        self.ensure_connection()
+        cursor = None
+        
+        try:
+            cursor = self.connection.cursor()
+            
+            cursor.execute(
+                """UPDATE donation_requests
+                   SET status = %s, updated_at = NOW()
+                   WHERE unique_id = %s
+                """,
+                (new_status, request_id)
+            )
+            
+            self.connection.commit()
+            return True, f"Request {new_status} successfully"
+            
+        except Error as e:
+            print(f"Error updating request status: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False, f"Database error: {str(e)}"
+        
+        finally:
+            if cursor:
+                cursor.close()
+            print(f"Error updating profile: {e}")
+            self.connection.rollback()
+            return False, f"Database error: {str(e)}"
 
     def update_user_profile(self, user_id, profile_data):
         """Update user profile information"""

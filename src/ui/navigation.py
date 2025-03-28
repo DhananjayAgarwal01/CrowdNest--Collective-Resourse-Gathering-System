@@ -33,11 +33,12 @@ class NavigationPane:
         
         # Navigation buttons
         nav_buttons = [
-            {"text": "🏠 Dashboard", "command": lambda: self.show_frame('dashboard')},
-            {"text": "🎁 Browse Donations", "command": lambda: self.show_frame('browse')},
-            {"text": "➕ Create Donation", "command": lambda: self.show_frame('donate')},
-            {"text": "📜 Donation History", "command": self.open_donation_history},
-            {"text": "👤 Profile", "command": lambda: self.show_frame('profile')}
+            {"text": "🏠 Dashboard", "command": lambda: self.show_frame('DashboardPage')},
+            {"text": "🎁 Browse Donations", "command": lambda: self.show_frame('DonationListPage')},
+            {"text": "➕ Create Donation", "command": lambda: self.show_frame('DonationFormPage')},
+            {"text": "📜 Donation History", "command": lambda: self.show_frame('DonationHistoryPage')},
+            {"text": "📋 Request List", "command": lambda: self.show_frame('RequestListPage')},
+            {"text": "👤 Profile", "command": lambda: self.show_frame('ProfilePage')}
         ]
         
         # Create navigation buttons
@@ -85,3 +86,12 @@ class NavigationPane:
         
     def pack_forget(self):
         self.frame.pack_forget()
+    
+    def update_user_info(self, user_info):
+        """Update navigation pane with user information"""
+        # Store user info for reference
+        self.user_info = user_info
+        
+        # Update any user-specific navigation elements if needed
+        # This method ensures the navigation pane reflects the current user's state
+        pass

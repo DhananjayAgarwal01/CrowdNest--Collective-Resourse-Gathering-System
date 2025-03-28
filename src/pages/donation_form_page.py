@@ -193,9 +193,10 @@ class DonationFormPage(ttk.Frame):
         image_data = None
         if self.image_paths:
             try:
-                image_data = self.image_paths
+                # Convert list of image paths to comma-separated string
+                image_data = ','.join(self.image_paths) if isinstance(self.image_paths, list) else self.image_paths
             except Exception as e:
-                print(f"Error reading image file: {e}")
+                print(f"Error processing image paths: {e}")
         
         # Submit donation
         success = self.submit_donation_callback(

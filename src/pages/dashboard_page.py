@@ -4,7 +4,7 @@ from src.ui.modern_ui import ModernUI
 from datetime import datetime
 
 class DashboardPage:
-    def __init__(self, parent, show_frame_callback, current_user=None):
+    def __init__(self, parent, current_user=None, show_frame_callback=None):
         self.parent = parent
         self.show_frame = show_frame_callback
         self.current_user = current_user
@@ -76,21 +76,23 @@ class DashboardPage:
         buttons_frame.pack(fill='x')
         
         quick_actions = [
-            ("Donate Item", 'donation_form', '📦'),
-            ("Browse Items", 'donation_list', '🔍'),
-            ("Messages", 'chat', '💬'),
-            ("My Profile", 'profile', '👤')
+            ("Donations", "DonationListPage", '🎁'),
+            ("Request", "RequestListPage", '📦'),
+            ("My Profile", "ProfilePage", '👤')
         ]
         
         for text, target, icon in quick_actions:
-            btn = ModernUI.create_button(
-                buttons_frame,
-                f"{icon} {text}",
-                lambda t=target: self.show_frame(t),
-                width=20
-            )
-            btn.pack(side='left', padx=5)
-        
+            if self.show_frame is not None:
+                btn = ModernUI.create_button(
+                    buttons_frame,
+                    f"{icon} {text}",
+                    lambda t=target: self.show_frame(t),
+                    width=20
+                )
+                btn.pack(side='left', padx=5)
+            else:
+                print(f"Warning: show_frame callback not set for {text}")
+
         # Notifications section
         notifications_container = ttk.Frame(scrollable_frame, style='Card.TFrame')
         notifications_container.pack(fill='x', padx=40, pady=20)
@@ -110,6 +112,9 @@ class DashboardPage:
         self.no_notifications_label.pack(pady=10)
         
         self.frames['dashboard'] = self.frame
+        
+        # Maximize window
+        self.frame.pack(fill=tk.BOTH, expand=True)  # Ensure frame fills the entire parent
     
     def update_notifications(self):
         """Update the notifications section with recent notifications"""

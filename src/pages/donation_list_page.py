@@ -1,175 +1,179 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
-from PIL import Image, ImageTk
-import io
-import base64
-from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS
+from tkinter import ttk, messagebox
 from src.ui.modern_ui import ModernUI
-import os
+from src.utils.email_validator import EmailValidator
+from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS, STATES
+from src.database.database_handler import DatabaseHandler
 
 class DonationListPage:
-    def __init__(self, parent, get_donations_callback, contact_donor_callback, show_frame_callback, update_status_callback=None, mark_as_donated_callback=None, current_user=None):
+    def __init__(self, parent, user_info, show_frame_callback):
+        """Initialize the donation list page"""
         self.parent = parent
-        self.get_donations = get_donations_callback
-        self.contact_donor_callback = contact_donor_callback
+        self.user_info = user_info
         self.show_frame = show_frame_callback
-        self.update_status_callback = update_status_callback
-        self.mark_as_donated_callback = mark_as_donated_callback
-        self.current_user = current_user
-        self.frame = None
-        self.search_entry = None
-        self.category_filter = None
-        self.condition_filter = None
-        self.location_filter = None
-        self.status_filter = None
-        self.donations_tree = None
-        self.create_frame()
+        self.db = DatabaseHandler()
         
-    def create_frame(self):
-        self.frame = ModernUI.create_card(self.parent)
+        # Create frame
+        self.frame = ModernUI.create_card(parent)
+        self.frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Create a canvas with scrollbar for scrolling
-        canvas = tk.Canvas(self.frame, bg=COLORS['card'], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, style='Card.TFrame')
-        
-        # Configure the canvas
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=800)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack the scrollbar and canvas
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        
-        # Create header
-        header_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        header_frame.pack(fill='x', padx=20, pady=(20,10))
-        
+        # Title
         ttk.Label(
-            header_frame,
-            text="🎁 Available Donations",
+            self.frame,
+            text="Available Donations",
             style='Title.TLabel'
-        ).pack(side='left')
+        ).pack(pady=(0, 20))
         
-        # Create search and filter section
-        search_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        search_frame.pack(fill='x', padx=20, pady=10)
+        # Search frame with modern styling
+        search_frame = ttk.Frame(self.frame, style='Card.TFrame')
+        search_frame.pack(fill='x', pady=(0, 20), padx=10)
         
-        # Search box
-        search_box_frame = ttk.Frame(search_frame, style='Card.TFrame')
-        search_box_frame.pack(side='left', fill='x', expand=True, padx=(0,10))
+        # Search title
+        ttk.Label(
+            search_frame,
+            text="Filter Donations",
+            style='Subtitle.TLabel'
+        ).pack(pady=(10, 15), padx=10, anchor='w')
         
-        self.search_entry = ModernUI.create_entry(
-            search_box_frame,
-            placeholder="Search donations..."
+        # Create filter container
+        filter_container = ttk.Frame(search_frame)
+        filter_container.pack(fill='x', padx=10, pady=(0, 10))
+        
+        # Search entry with icon
+        search_container = ttk.Frame(filter_container)
+        search_container.pack(side='left', padx=(0, 10), fill='x', expand=True)
+        ttk.Label(search_container, text='🔍', font=('Segoe UI', 10)).pack(side='left', padx=(0, 5))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_container, textvariable=self.search_var, width=30)
+        search_entry.pack(side='left', fill='x', expand=True)
+        
+        # Category dropdown with icon
+        category_container = ttk.Frame(filter_container)
+        category_container.pack(side='left', padx=10)
+        ttk.Label(category_container, text='📦', font=('Segoe UI', 10)).pack(side='left', padx=(0, 5))
+        self.category_var = tk.StringVar()
+        category_combo = ttk.Combobox(category_container, textvariable=self.category_var, values=list(CATEGORIES), width=20)
+        category_combo.pack(side='left')
+        
+        # State dropdown with icon
+        state_container = ttk.Frame(filter_container)
+        state_container.pack(side='left', padx=10)
+        ttk.Label(state_container, text='📍', font=('Segoe UI', 10)).pack(side='left', padx=(0, 5))
+        self.state_var = tk.StringVar()
+        states_list = ['All Locations'] + list(STATES.keys())
+        self.state_combo = ttk.Combobox(state_container, textvariable=self.state_var, values=states_list, width=20)
+        self.state_combo.set('All Locations')
+        self.state_combo.pack(side='left')
+        
+        # City dropdown
+        city_container = ttk.Frame(filter_container)
+        city_container.pack(side='left', padx=10)
+        self.city_var = tk.StringVar()
+        self.city_combo = ttk.Combobox(city_container, textvariable=self.city_var, width=20)
+        self.city_combo.pack(side='left')
+        
+        # Bind state selection to update cities
+        self.state_combo.bind('<<ComboboxSelected>>', self.update_cities)
+        
+        def update_cities(self, event=None):
+            selected_state = self.state_var.get()
+            if selected_state == 'All Locations':
+                self.city_combo['values'] = []
+                self.city_var.set('')
+                self.city_combo['state'] = 'disabled'
+            else:
+                self.city_combo['state'] = 'normal'
+                self.city_combo['values'] = STATES.get(selected_state, [])
+                self.city_var.set('')
+        
+        def clear_filters(self):
+            self.search_var.set('')
+            self.category_var.set('')
+            self.state_var.set('All Locations')
+            self.city_var.set('')
+            self.city_combo['state'] = 'disabled'
+            self.search_donations()
+        
+        def search_donations(self):
+            search_query = self.search_var.get().strip()
+            category = self.category_var.get()
+            state = self.state_var.get()
+            city = self.city_var.get()
+            
+            location = None
+            if state != 'All Locations' and state:
+                location = state if not city else city
+            
+            # Clear existing items
+            for item in self.donations_tree.get_children():
+                self.donations_tree.delete(item)
+            
+            # Search donations
+            donations = self.db.search_donations(
+                search_query=search_query if search_query else None,
+                category=category if category else None,
+                location=location
+            )
+        
+        # Search button container
+        button_container = ttk.Frame(search_frame)
+        button_container.pack(fill='x', padx=10, pady=(0, 10))
+        
+        # Search button with modern styling
+        search_btn = ModernUI.create_button(
+            button_container,
+            "🔍 Search Donations",
+            self.search_donations,
+            style='Primary.TButton'
         )
-        self.search_entry.pack(side='left', fill='x', expand=True)
-        self.search_entry.bind('<Return>', lambda e: self.refresh_donations())
+        search_btn.pack(side='left', padx=5)
         
-        # Filter dropdowns
-        filters_frame = ttk.Frame(search_frame, style='Card.TFrame')
-        filters_frame.pack(side='right', fill='x')
-        
-        # Status filter
-        self.status_filter = ModernUI.create_dropdown(
-            filters_frame,
-            ["All Status", "Available", "Received", "Donated"],
-            "All Status"
+        # Clear filters button
+        clear_btn = ModernUI.create_button(
+            button_container,
+            "❌ Clear Filters",
+            self.clear_filters,
+            style='Secondary.TButton'
         )
-        self.status_filter.pack(side='left', padx=5)
-        self.status_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_donations())
+        clear_btn.pack(side='left', padx=5)
         
-        # Category filter
-        self.category_filter = ModernUI.create_dropdown(
-            filters_frame,
-            ["All Categories"] + CATEGORIES,
-            "All Categories"
-        )
-        self.category_filter.pack(side='left', padx=5)
-        self.category_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_donations())
-        
-        # Condition filter
-        self.condition_filter = ModernUI.create_dropdown(
-            filters_frame,
-            ["All Conditions"] + CONDITIONS,
-            "All Conditions"
-        )
-        self.condition_filter.pack(side='left', padx=5)
-        self.condition_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_donations())
-        
-        # Location filter
-        self.location_filter = ModernUI.create_dropdown(
-            filters_frame,
-            ["All Locations"] + LOCATIONS,
-            "All Locations"
-        )
-        self.location_filter.pack(side='left', padx=5)
-        self.location_filter.bind('<<ComboboxSelected>>', lambda e: self.refresh_donations())
-        
-        # Create donations list
-        donations_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        donations_frame.pack(fill='both', expand=True, padx=20, pady=10)
-        
-        # Create Treeview
-        columns = ('title', 'category', 'condition', 'location', 'donor', 'status')
-        self.donations_tree = ttk.Treeview(donations_frame, columns=columns, show='headings', style='Treeview')
+        # Create Treeview for donations
+        columns = ('unique_id', 'title', 'category', 'condition', 'location', 'donor', 'status', 'email')
+        self.donations_tree = ttk.Treeview(self.frame, columns=columns, show='headings', style='Treeview')
         
         # Define column headings
+        self.donations_tree.heading('unique_id', text='ID')
         self.donations_tree.heading('title', text='Title')
         self.donations_tree.heading('category', text='Category')
         self.donations_tree.heading('condition', text='Condition')
         self.donations_tree.heading('location', text='Location')
         self.donations_tree.heading('donor', text='Donor')
         self.donations_tree.heading('status', text='Status')
+        self.donations_tree.heading('email', text='Contact Email')
         
         # Define column widths
+        self.donations_tree.column('unique_id', width=50)
         self.donations_tree.column('title', width=200)
         self.donations_tree.column('category', width=100)
         self.donations_tree.column('condition', width=100)
         self.donations_tree.column('location', width=150)
         self.donations_tree.column('donor', width=150)
         self.donations_tree.column('status', width=100)
+        self.donations_tree.column('email', width=150)
         
         # Add scrollbar to treeview
-        tree_scrollbar = ttk.Scrollbar(donations_frame, orient='vertical', command=self.donations_tree.yview)
+        tree_scrollbar = ttk.Scrollbar(self.frame, orient='vertical', command=self.donations_tree.yview)
         self.donations_tree.configure(yscrollcommand=tree_scrollbar.set)
         
-        # Pack the treeview and its scrollbar
-        self.donations_tree.pack(side='left', fill='both', expand=True)
+        # Pack treeview and scrollbar
+        self.donations_tree.pack(side='top', fill='both', expand=True)
         tree_scrollbar.pack(side='right', fill='y')
         
-        # Bind double-click event
-        self.donations_tree.bind('<Double-1>', self.on_donation_select)
+        # Action frame
+        action_frame = ttk.Frame(self.frame, style='Card.TFrame')
+        action_frame.pack(fill='x', pady=10)
         
-        # Create action buttons with login checks
-        action_frame = ttk.Frame(scrollable_frame, style='Card.TFrame')
-        action_frame.pack(fill='x', padx=20, pady=10)
-        
-        contact_button = ttk.Button(
-            action_frame, 
-            text="Contact Donor", 
-            command=self.on_contact_donor
-        )
-        contact_button.pack(side='left', padx=5)
-        
-        interested_button = ttk.Button(
-            action_frame, 
-            text="Mark as Interested", 
-            command=self.on_mark_as_interested
-        )
-        interested_button.pack(side='left', padx=5)
-        
-        # Add buttons
-        ModernUI.create_button(
-            action_frame,
-            "View Selected",
-            self.view_donation_details
-        ).pack(side='left', padx=5)
-        
+        # Back to dashboard button
         ModernUI.create_button(
             action_frame,
             "Back to Dashboard",
@@ -177,361 +181,2175 @@ class DonationListPage:
             style='Secondary.TButton'
         ).pack(side='right', padx=5)
         
+        # View details button
+        ModernUI.create_button(
+            action_frame,
+            "View Details",
+            self.view_donation_details,
+            style='Primary.TButton'
+        ).pack(side='left', padx=5)
+        
+        # Send email button
+        ModernUI.create_button(
+            action_frame,
+            "Send Email to Donor",
+            self.send_email_dialog,
+            style='Primary.TButton'
+        ).pack(side='left', padx=5)
+        
+        # Delete button (only visible to donation owner)
+        self.delete_btn = ModernUI.create_button(
+            action_frame,
+            "Delete Donation",
+            self.delete_donation,
+            style='Danger.TButton'
+        )
+        self.delete_btn.pack(side='left', padx=5)
+        self.delete_btn.pack_forget()  # Initially hidden
+        
         # Load initial donations
         self.refresh_donations()
     
-    def refresh_donations(self, search_term=None, category=None, condition=None, location=None, status=None):
-        """Refresh the donations list with optional filters"""
-        try:
-            # Prepare filter parameters
-            filters = {}
-            
-            # Add non-None filters
-            if search_term:
-                # For search_term, we'll need to modify get_donations to handle it
-                filters['search_term'] = search_term
-            
-            if category:
-                filters['category'] = category
-            
-            if condition:
-                filters['condition'] = condition
-            
-            if location:
-                filters['location'] = location
-            
-            if status:
-                filters['status'] = status
-            
-            # Retrieve donations using the new method
-            donations = self.get_donations(**filters)
-            
-            # Clear existing items in the tree
-            for item in self.donations_tree.get_children():
-                self.donations_tree.delete(item)
-            
-            # Populate tree with donations
-            for donation in donations:
-                # Combine state and city for location display
-                location = donation.get('location', 'Unknown')
-                
-                # Prepare values for tree view
-                values = (
-                    donation.get('title', 'Untitled'),
-                    donation.get('category', 'Uncategorized'),
-                    donation.get('condition', 'Unknown'),
-                    location,
-                    donation.get('donor_name', 'Anonymous'),
-                    donation.get('status', 'Available')
-                )
-                
-                # Insert donation with unique ID as tag
-                self.donations_tree.insert(
-                    '', 'end', 
-                    values=values, 
-                    tags=(str(donation.get('unique_id')),)
-                )
-        
-        except Exception as e:
-            print(f"Error refreshing donations: {e}")
-            messagebox.showerror("Error", "Failed to refresh donations")
+    def update_cities(self, event=None):
+        """Update cities dropdown based on selected state"""
+        selected_state = self.state_var.get()
+        if selected_state in STATES:
+            self.city_combo['values'] = STATES[selected_state]
+            self.city_var.set('')  # Clear city selection
     
-    def update_donation_list(self, donations):
-        """Update the donations list with new data"""
+    def clear_filters(self):
+        """Clear all search filters"""
+        self.search_var.set('')
+        self.category_var.set('')
+        self.state_var.set('')
+        self.city_var.set('')
+        self.search_donations()
+    
+    def search_donations(self):
+        """Search donations based on criteria"""
+        search_query = self.search_var.get()
+        category = self.category_var.get() or None
+        state = self.state_var.get() or None
+        city = self.city_var.get() or None
+        
+        # Combine state and city for location search
+        location = None
+        if city:
+            location = city
+        elif state:
+            location = state
+        
+        donations = self.db.search_donations(search_query, category, location)
+        self.refresh_donations(donations)
+    
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
         # Clear existing items
         for item in self.donations_tree.get_children():
             self.donations_tree.delete(item)
-            
-        # Add new items
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
         for donation in donations:
-            self.donations_tree.insert(
-                '',
-                'end',
-                values=(
-                    donation['title'],
-                    donation['category'],
-                    donation['condition'],
-                    donation['location'],
-                    donation['donor_name'],
-                    donation['status']
-                ),
-                tags=(str(donation['unique_id']),)
-            )
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
             
-    def view_donation_details(self):
-        """View details of selected donation"""
-        selected_items = self.donations_tree.selection()
-        if not selected_items:
-            messagebox.showwarning("No Selection", "Please select a donation to view")
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
             return
             
-        item = selected_items[0]
-        donation = {
-            'id': self.donations_tree.item(item)['tags'][0],
-            'values': self.donations_tree.item(item)['values']
-        }
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
         
-        # Fetch full donation details
-        full_donation = self.get_donations(donation_id=donation['id'])[0]
-        
-        # Create popup window
-        popup = tk.Toplevel()
-        popup.title("Donation Details")
-        popup.geometry("600x700")
-        
-        # Create main frame
-        main_frame = ModernUI.create_card(popup)
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        # Image display
-        image_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        image_frame.pack(fill='x', pady=10)
-        
-        # Check if image exists
-        if full_donation.get('image_path'):
-            try:
-                # Convert image data to PhotoImage
-                from PIL import Image, ImageTk
-                import io
-                
-                # If image_path is a file path
-                if isinstance(full_donation['image_path'], str) and os.path.exists(full_donation['image_path']):
-                    image = Image.open(full_donation['image_path'])
-                # If image_path is bytes
-                elif isinstance(full_donation['image_path'], bytes):
-                    image = Image.open(io.BytesIO(full_donation['image_path']))
-                else:
-                    raise ValueError("Invalid image format")
-                
-                # Resize image to fit the frame
-                image.thumbnail((500, 300))
-                photo = ImageTk.PhotoImage(image)
-                
-                # Create label with image
-                image_label = ttk.Label(image_frame, image=photo, style='Card.TLabel')
-                image_label.image = photo  # Keep a reference to prevent garbage collection
-                image_label.pack(expand=True)
-            except Exception as e:
-                print(f"Error loading image: {e}")
-                ttk.Label(
-                    image_frame,
-                    text="Unable to load image",
-                    style='Card.TLabel'
-                ).pack(anchor='w')
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
         else:
-            ttk.Label(
-                image_frame,
-                text="No image available",
-                style='Card.TLabel'
-            ).pack(anchor='w')
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
         
-        # Title
-        ttk.Label(
-            main_frame,
-            text=donation['values'][0],
-            style='Title.TLabel'
-        ).pack(pady=(0, 10))
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
         
-        # Category and condition badges
-        badges_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        badges_frame.pack(fill='x', pady=5)
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
         
-        ttk.Label(
-            badges_frame,
-            text=donation['values'][1],
-            style='CategoryBadge.TLabel'
-        ).pack(side='left', padx=5)
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
         
-        ttk.Label(
-            badges_frame,
-            text=donation['values'][2],
-            style='ConditionBadge.TLabel'
-        ).pack(side='left', padx=5)
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
-        # Location
-        location_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        location_frame.pack(fill='x', pady=10)
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
         
-        ttk.Label(
-            location_frame,
-            text="📍 " + donation['values'][3],
-            style='Card.TLabel'
-        ).pack(anchor='w')
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
         
-        # Donor info
-        donor_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        donor_frame.pack(fill='x', pady=10)
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
         
-        ttk.Label(
-            donor_frame,
-            text="👤 Donated by: " + donation['values'][4],
-            style='Card.TLabel'
-        ).pack(anchor='w')
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
         
-        # Status
-        status_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        status_frame.pack(fill='x', pady=10)
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
         
-        ttk.Label(
-            status_frame,
-            text="Status: " + donation['values'][5],
-            style='Card.TLabel'
-        ).pack(anchor='w')
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
         
         # Action buttons
-        button_frame = ttk.Frame(main_frame, style='Card.TFrame')
-        button_frame.pack(fill='x', pady=20)
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
         
-        # Contact Donor button
-        ModernUI.create_button(
-            button_frame,
-            "Contact Donor",
-            lambda: self.contact_donor(donation['id'])
-        ).pack(side='left', padx=5)
-        
-        # Mark as Donated button (only for the donor)
-        if self.current_user and full_donation['donor_id'] == self.current_user['unique_id'] and donation['values'][5] == 'available':
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
             ModernUI.create_button(
                 button_frame,
-                "Mark as Donated",
-                lambda: self.mark_as_donated(donation['id']),
-                style='Success.TButton'
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
             ).pack(side='left', padx=5)
         
         # Close button
         ModernUI.create_button(
             button_frame,
             "Close",
-            popup.destroy,
+            details_window.destroy,
             style='Secondary.TButton'
-        ).pack(side='left', padx=5)
+        ).pack(side='right', padx=5)
     
-    def contact_donor(self, item=None):
-        if not item:
-            selection = self.donations_tree.selection()
-            if not selection:
-                messagebox.showinfo("Info", "Please select a donation first")
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
                 return
-            item = selection[0]
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
         
-        try:
-            # Try to get the donation ID from tags first
-            tags = self.donations_tree.item(item, 'tags')
-            if tags:
-                donation_id = tags[0]
-            else:
-                # If no tags, get the ID from the values
-                values = self.donations_tree.item(item, 'values')
-                if values and len(values) > 0:
-                    # Assuming the first value is the donation ID
-                    donation_id = values[0]
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
                 else:
-                    messagebox.showerror("Error", "Unable to retrieve donation ID")
-                    return
-        except Exception as e:
-            print(f"Error retrieving donation ID: {e}")
-            messagebox.showerror("Error", "Error retrieving donation details")
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
             return
-        
-        # Call the contact donor callback function provided by the main app
-        try:
-            self.contact_donor_callback(donation_id)
-        except Exception as e:
-            print(f"Error in contact_donor_callback: {e}")
-            messagebox.showerror("Error", "Unable to contact donor")
-    
-    def on_donation_select(self, event):
-        self.view_donation_details()
-    
-    def update_donation_status(self, donation_id, new_status):
-        """Update the status of a donation"""
-        if self.update_status_callback:
-            success, message = self.update_status_callback(donation_id, new_status)
-            if success:
-                messagebox.showinfo("Success", message)
-                self.refresh_donations()
-            else:
-                messagebox.showerror("Error", message)
-    
-    def mark_as_donated(self, donation_id):
-        """Mark the donation as donated"""
-        if not self.current_user:
-            messagebox.showerror("Error", "You must be logged in to mark a donation as donated")
-            return
-        
-        # Call the mark as donated callback
-        try:
-            success, message = self.mark_as_donated_callback(donation_id)
             
-            if success:
-                messagebox.showinfo("Success", message)
-                # Refresh donations list
-                self.refresh_donations()
-            else:
-                messagebox.showerror("Error", message)
-        except Exception as e:
-            print(f"Error marking donation as donated: {e}")
-            messagebox.showerror("Error", "Unable to mark donation as donated")
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
     
-    def on_contact_donor(self):
-        """Handle contact donor action with login check"""
-        # Check if user is logged in
-        if not self.current_user:
-            messagebox.showwarning("Login Required", "You must be logged in to contact a donor")
-            # You might want to add a way to trigger login from here
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
             return
         
-        # Get selected donation
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
         selected_item = self.donations_tree.selection()
         if not selected_item:
-            messagebox.showwarning("Selection Required", "Please select a donation to contact")
+            messagebox.showerror("Error", "Please select a donation to contact")
             return
         
-        # Get donation ID from selected item
-        donation_id = self.donations_tree.item(selected_item[0])['tags'][0]
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
         
-        # Call contact donor callback
-        self.contact_donor_callback(donation_id)
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
     
-    def on_mark_as_interested(self):
-        """Handle mark as interested action with login check"""
-        # Check if user is logged in
-        if not self.current_user:
-            messagebox.showwarning("Login Required", "You must be logged in to mark a donation as interested")
-            # You might want to add a way to trigger login from here
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
             return
         
-        # Get selected donation
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
         selected_item = self.donations_tree.selection()
         if not selected_item:
-            messagebox.showwarning("Selection Required", "Please select a donation")
+            messagebox.showerror("Error", "Please select a donation to contact")
             return
         
-        # Get donation ID from selected item
-        donation_id = self.donations_tree.item(selected_item[0])['tags'][0]
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
         
-        # Call update status callback (you'll need to implement this in the main app)
-        if hasattr(self, 'update_status_callback'):
-            self.update_status_callback(donation_id, 'interested')
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
     
-    def get_donations(self, filter_dict=None):
-        """
-        Retrieve donations with optional filtering
-        Excludes completed donations by default
-        """
-        try:
-            # Create a copy of the filter dictionary to avoid modifying the original
-            filter_dict = filter_dict.copy() if filter_dict else {}
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
             
-            # Always exclude completed donations
-            filter_dict['status'] = 'available'
-            
-            # Call database method to get filtered donations
-            donations = self.db.get_filtered_donations(filter_dict)
-            
-            return donations
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
         
-        except Exception as e:
-            print(f"Error retrieving donations: {e}")
-            messagebox.showerror("Error", "Failed to retrieve donations")
-            return []
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window with improved styling
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("600x600")
+        
+        # Add details to window with enhanced layout
+        content_frame = ttk.Frame(details_window, style='Card.TFrame', padding=25)
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Title with larger font and emphasis
+        title_label = ttk.Label(content_frame, text=donation['title'], style='Title.TLabel', font=('Segoe UI', 16, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Information section with improved spacing and organization
+        info_frame = ttk.Frame(content_frame)
+        info_frame.pack(fill='x', pady=(0, 20))
+        
+        # Left column
+        left_frame = ttk.Frame(info_frame)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(left_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['category']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Condition", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=donation['condition']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(left_frame, text="Location", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(left_frame, text=f"{donation['city']}, {donation['state']}").pack(anchor='w', pady=(0, 10))
+        
+        # Right column
+        right_frame = ttk.Frame(info_frame)
+        right_frame.pack(side='right', fill='x', expand=True)
+        
+        ttk.Label(right_frame, text="Donor", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_name']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Status", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['status']).pack(anchor='w', pady=(0, 10))
+        
+        ttk.Label(right_frame, text="Contact", font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 2))
+        ttk.Label(right_frame, text=donation['donor_email']).pack(anchor='w', pady=(0, 10))
+        
+        # Description section with improved visibility
+        description_frame = ttk.LabelFrame(content_frame, text="Description", padding=15)
+        description_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        description_text = tk.Text(description_frame, wrap='word', height=6, width=50, font=('Segoe UI', 10))
+        description_text.insert('1.0', donation['description'])
+        description_text.configure(state='disabled')
+        description_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        # Request button (only visible if user is not the donor)
+        if donation.get('donor_id') != self.user_info['unique_id'] and donation['status'] == 'available':
+            ModernUI.create_button(
+                button_frame,
+                "Request Item",
+                lambda: self.request_item(donation),
+                style='Primary.TButton'
+            ).pack(side='left', padx=5)
+        
+        # Close button
+        ModernUI.create_button(
+            button_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        ).pack(side='right', padx=5)
+    
+    def delete_donation(self):
+        """Delete the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to delete")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this donation?"):
+            return
+        
+        # Delete donation
+        if self.db.delete_donation(donation_id, self.user_info['unique_id']):
+            messagebox.showinfo("Success", "Donation deleted successfully")
+            self.refresh_donations()
+        else:
+            messagebox.showerror("Error", "Failed to delete donation")
+    
+    def send_email_dialog(self):
+        """Open dialog to send email"""
+        # Get selected item
+        selected_item = self.donations_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a donation to contact")
+            return
+        
+        # Get email from selected row
+        values = self.donations_tree.item(selected_item[0])['values']
+        recipient_email = values[6]
+        
+        # Create email dialog
+        email_window = tk.Toplevel(self.frame)
+        email_window.title("Send Email")
+        email_window.geometry("400x300")
+        
+        # Subject
+        ttk.Label(email_window, text="Subject:").pack(pady=(10,0))
+        subject_entry = ttk.Entry(email_window, width=50)
+        subject_entry.pack(pady=(0,10))
+        
+        # Message body
+        ttk.Label(email_window, text="Message:").pack(pady=(10,0))
+        message_text = tk.Text(email_window, height=10, width=50)
+        message_text.pack(pady=(0,10))
+        
+        # Send button
+        def send_email():
+            subject = subject_entry.get()
+            message = message_text.get("1.0", tk.END).strip()
+            
+            if not subject or not message:
+                messagebox.showerror("Error", "Subject and message cannot be empty")
+                return
+            
+            try:
+                # Send email using EmailValidator
+                EmailValidator.send_email(
+                    recipient_email, 
+                    subject, 
+                    message
+                )
+                messagebox.showinfo("Success", "Email sent successfully!")
+                email_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to send email: {str(e)}")
+        
+        send_button = ModernUI.create_button(
+            email_window,
+            "Send Email",
+            send_email,
+            style='Primary.TButton'
+        )
+        send_button.pack(pady=10)
+        
+        email_window.focus_force()
+
+    def refresh_donations(self, donations=None):
+        """Populate the treeview with donations"""
+        # Clear existing items
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+        
+        if donations is None:
+            donations = self.db.search_donations()
+        
+        # Add donations to treeview
+        for donation in donations:
+            item_id = self.donations_tree.insert('', 'end', values=(
+                donation['unique_id'],
+                donation['title'],
+                donation['category'],
+                donation['condition'],
+                f"{donation['city']}, {donation['state']}",
+                donation['donor_name'],
+                donation['status'],
+                donation['donor_email']
+            ))
+            # Store donation ID in the item
+            self.donations_tree.set(item_id, 'unique_id', donation['unique_id'])
+            
+            # Show delete button if user is the donor
+            selected_items = self.donations_tree.selection()
+            if selected_items:
+                donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+                if donation.get('donor_id') == self.user_info['unique_id']:
+                    self.delete_btn.pack(side='left', padx=5)
+                else:
+                    self.delete_btn.pack_forget()
+    
+    def request_item(self, donation):
+        """Send a request for the selected donation"""
+        if not self.user_info:
+            messagebox.showerror("Error", "Please log in to request items")
+            return
+            
+        # Create request in database
+        success, message = self.db.create_donation_request(
+            donation_id=donation['unique_id'],
+            requester_id=self.user_info['unique_id'],
+            requester_name=self.user_info['full_name'],
+            requester_email=self.user_info['email']
+        )
+        
+        if success:
+            # Send email notification to donor
+            EmailValidator.send_communication_email(
+                self.user_info['full_name'],
+                self.user_info['email'],
+                donation['donor_email'],
+                "New Donation Request",
+                f"A new request has been made for your donation: {donation['title']}"
+            )
+            messagebox.showinfo("Success", "Request sent successfully")
+        else:
+            messagebox.showerror("Error", message)
+    
+    def view_donation_details(self):
+        """Display detailed information about the selected donation"""
+        selected_items = self.donations_tree.selection()
+        if not selected_items:
+            messagebox.showerror("Error", "Please select a donation to view")
+            return
+        
+        donation_id = self.donations_tree.set(selected_items[0], 'unique_id')
+        donation = self.db.get_donation_details(donation_id)
+        
+        if not donation:
+            messagebox.showerror("Error", "Could not fetch donation details")
+            return
+        
+        # Create details window
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Donation Details")
+        details_window.geometry("500x400")
+        
+        # Add details to window
+        content_frame = ttk.Frame(details_window, padding=20)
+        content_frame.pack(fill='both', expand=True)
+        
+        ttk.Label(content_frame, text=donation['title'], style='Title.TLabel').pack(pady=(0, 10))
+        ttk.Label(content_frame, text=f"Category: {donation['category']}").pack(anchor='w')
+        ttk

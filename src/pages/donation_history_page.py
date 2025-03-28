@@ -10,7 +10,8 @@ class DonationHistoryPage:
         self.frame.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Store parameters
-        self.donations = donations
+        # Ensure donations is a list, default to empty list if not
+        self.donations = donations if isinstance(donations, list) else []
         self.show_frame = show_frame_callback
         
         # Title
@@ -66,18 +67,24 @@ class DonationHistoryPage:
             self.tree.delete(item)
         
         # Add donations to treeview
-        for donation in self.donations:
-            self.tree.insert('', 'end', values=(
-                donation.get('title', 'N/A'),
-                donation.get('category', 'N/A'),
-                donation.get('condition', 'N/A'),
-                donation.get('location', 'N/A'),
-                donation.get('status', 'N/A'),
-                donation.get('updated_at', 'N/A')
-            ))
+        if not self.donations:
+            # Show a message if no donations
+            self.tree.insert('', 'end', values=('No donations found', '', '', '', '', ''))
+        else:
+            for donation in self.donations:
+                # Use .get() to safely retrieve values with defaults
+                self.tree.insert('', 'end', values=(
+                    donation.get('title', 'N/A'),
+                    donation.get('category', 'N/A'),
+                    donation.get('condition', 'N/A'),
+                    donation.get('location', 'N/A'),
+                    donation.get('status', 'N/A'),
+                    donation.get('updated_at', 'N/A')
+                ))
     
     def reset(self):
         """Reset the page (called during logout)"""
         # Clear donations
         for item in self.tree.get_children():
             self.tree.delete(item)
+        self.donations = []

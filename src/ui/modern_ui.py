@@ -160,9 +160,19 @@ class ModernUI:
         return combo
 
     @staticmethod
-    def create_location_selector(parent, state_var, city_var):
-        """Create a location selector with state and city dropdowns"""
+    def create_location_selector(parent, state_var, city_var, states_dict=None):
+        """Create a location selector with state and city dropdowns
+        
+        :param parent: Parent widget
+        :param state_var: Tkinter StringVar for state selection
+        :param city_var: Tkinter StringVar for city selection
+        :param states_dict: Optional dictionary of states and cities. 
+                            If not provided, uses the default STATES from constants
+        """
         frame = ttk.Frame(parent, style='Card.TFrame')
+        
+        # Use provided states_dict or default STATES
+        locations = states_dict or STATES
         
         # Create state dropdown
         state_frame = ttk.Frame(frame, style='Card.TFrame')
@@ -170,7 +180,7 @@ class ModernUI:
         
         state_dropdown = ModernUI.create_dropdown(
             state_frame,
-            list(STATES.keys()),
+            list(locations.keys()),
             "Select State",
             state_var
         )
@@ -190,7 +200,7 @@ class ModernUI:
         
         def update_cities(*args):
             state = state_var.get()
-            cities = STATES.get(state, [])
+            cities = locations.get(state, [])
             city_var.set('')  # Reset city selection
             city_dropdown['values'] = cities
             if cities:

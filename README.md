@@ -13,10 +13,9 @@ CrowdNest is a desktop application built with Python and MySQL that facilitates 
 - Real-time updates
 
 ## Prerequisites
-
-- Python 3.8 or higher
-- MySQL Server 8.0 or higher
-- Tkinter (usually comes with Python)
+- Python 3.8+
+- MySQL Server
+- pip (Python package manager)
 
 ## Installation
 
@@ -31,21 +30,28 @@ cd CrowdNest
 pip install -r requirements.txt
 ```
 
-3. Configure MySQL:
-- Create a MySQL database named `CrowdNest`
-- Update the database configuration in `database_handler.py` with your MySQL credentials:
-```python
-DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'your_username',
-    'password': 'your_password',
-    'database': 'CrowdNest'
-}
+## Database Setup
+
+1. Install MySQL Server
+2. Create a new database:
+```sql
+CREATE DATABASE CrowdNest;
+USE CrowdNest;
 ```
 
-4. Initialize the database:
+3. Run database setup script:
 ```bash
-python db_init.py
+mysql -u root -p CrowdNest < database_setup.sql
+```
+
+## Environment Configuration
+
+Create a `.env` file in the project root with the following contents:
+```
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=12345678
+DB_NAME=CrowdNest
 ```
 
 ## Running the Application
@@ -71,12 +77,7 @@ The application uses the following tables:
 - `messages`: User-to-user communication
 
 ## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Please read CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
 
 ## License
 
