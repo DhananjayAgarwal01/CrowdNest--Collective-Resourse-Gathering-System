@@ -131,11 +131,49 @@ class DonationRequestFormPage:
         city = self.city_entry.get().strip()
         urgency = self.urgency_var.get()
 
-        # Validate all fields
-        if not all([title, description, category != 'Select Category', 
-                    condition != 'Select Condition', state, city, 
-                    urgency != 'Select Urgency']):
-            messagebox.showerror("Validation Error", "Please fill in all fields")
+        # Enhanced validation with detailed error messages
+        validation_errors = []
+
+        # Title validation
+        if not title:
+            validation_errors.append("Title is required")
+        elif len(title) < 5 or len(title) > 100:
+            validation_errors.append("Title must be between 5 and 100 characters")
+
+        # Description validation
+        if not description:
+            validation_errors.append("Description is required")
+        elif len(description) < 10 or len(description) > 500:
+            validation_errors.append("Description must be between 10 and 500 characters")
+
+        # Category validation
+        if category == 'Select Category':
+            validation_errors.append("Please select a category")
+
+        # Condition validation
+        if condition == 'Select Condition':
+            validation_errors.append("Please select an item condition")
+
+        # State validation
+        if not state:
+            validation_errors.append("State is required")
+        elif len(state) < 2 or len(state) > 50:
+            validation_errors.append("State must be between 2 and 50 characters")
+
+        # City validation
+        if not city:
+            validation_errors.append("City is required")
+        elif len(city) < 2 or len(city) > 50:
+            validation_errors.append("City must be between 2 and 50 characters")
+
+        # Urgency validation
+        if urgency == 'Select Urgency':
+            validation_errors.append("Please select urgency level")
+
+        # Display validation errors if any
+        if validation_errors:
+            error_message = "Please correct the following errors:\n\n" + "\n".join(validation_errors)
+            messagebox.showerror("Validation Error", error_message)
             return
 
         # Get user ID from user info
@@ -144,17 +182,33 @@ class DonationRequestFormPage:
             messagebox.showerror("Error", "User information not found")
             return
 
-        # Create donation request
-        success, message, request_id = self.db.create_donation_request(
-            user_id, title, description, category, condition, 
-            state, city, urgency.upper()
-        )
+        # Create donation request with improved error handling
+        try:
+            success, message, request_id = self.db.create_donation_request(
+                user_id, title, description, category, condition, 
+                state, city, urgency
+            )
 
-        if success:
-            messagebox.showinfo("Success", f"Donation request created successfully!\nRequest ID: {request_id}")
-            self._clear_form()
-        else:
-            messagebox.showerror("Error", message)
+            if success:
+                # Show success with request details
+                success_message = (
+                    f"Donation request created successfully!\n"
+                    f"Request ID: {request_id}\n"
+                    f"Title: {title}\n"
+                    f"Category: {category}\n"
+                    f"Status: Open"
+                )
+                messagebox.showinfo("Success", success_message)
+                self._clear_form()
+            else:
+                # Show specific error message from database
+                messagebox.showerror("Request Creation Failed", message)
+
+        except Exception as e:
+            # Catch any unexpected errors
+            error_message = f"An unexpected error occurred: {str(e)}"
+            messagebox.showerror("Error", error_message)
+            print(error_message)  # Log for debugging
 
     def _cancel_request(self):
         """Cancel the donation request form"""

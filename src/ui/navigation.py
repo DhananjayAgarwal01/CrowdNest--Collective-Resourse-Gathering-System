@@ -38,6 +38,7 @@ class NavigationPane:
             {"text": "➕ Create Donation", "command": lambda: self.show_frame('DonationFormPage')},
             {"text": "📜 Donation History", "command": lambda: self.show_frame('DonationHistoryPage')},
             {"text": "📋 Request List", "command": lambda: self.show_frame('RequestListPage')},
+            {"text": "📝 Accepted Requests", "command": lambda: self.show_frame('AcceptedRequestsPage')},
             {"text": "👤 Profile", "command": lambda: self.show_frame('ProfilePage')}
         ]
         

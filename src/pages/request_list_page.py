@@ -31,7 +31,20 @@ class RequestListPage:
         
         # Load initial requests
         self.refresh_requests()
-    
+        
+        # Add buttons for accept and deny
+        self.action_frame = tk.Frame(self.frame)
+        self.action_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+        
+        self.accept_button = tk.Button(self.action_frame, text="Accept Request", command=self.accept_request, state=tk.DISABLED)
+        self.accept_button.pack(side=tk.LEFT, padx=5)
+        
+        self.deny_button = tk.Button(self.action_frame, text="Deny Request", command=self.deny_request, state=tk.DISABLED)
+        self.deny_button.pack(side=tk.LEFT, padx=5)
+        
+        # Bind selection event to enable/disable buttons
+        self.requests_tree.bind('<<TreeviewSelect>>', self.on_request_select)
+
     def _create_search_frame(self):
         """Create search and filter components"""
         search_frame = ttk.Frame(self.frame)
@@ -127,12 +140,16 @@ class RequestListPage:
         category = self.category_var.get()
         status = self.status_var.get()
         
+        # Get current user ID from session
+        user_id = self.user_info.get('unique_id')
+        
         # Fetch requests from database with filters
         try:
             requests = self.db.search_requests(
                 search_query=search_term if search_term != "search requests..." else None,
                 category=category if category != 'All' else None,
-                status=status.lower() if status != 'All' else None
+                status=status.lower() if status != 'All' else None,
+                donor_id=user_id
             )
             
             # Clear existing items
@@ -142,11 +159,11 @@ class RequestListPage:
             # Populate treeview
             for request in requests:
                 self.requests_tree.insert('', 'end', values=(
-                    request['title'], 
-                    request['category'], 
+                    request.get('request_message', 'N/A')[:50],  # Use request message as title
+                    request.get('donation_title', 'N/A'),  # Show donation title
                     request.get('requester_name', 'Unknown'),
-                    request['status'].capitalize(), 
-                    request['created_at'].strftime('%Y-%m-%d %H:%M')
+                    request.get('status', 'Unknown').capitalize(), 
+                    request.get('created_at', 'N/A')
                 ))
         except Exception as e:
             messagebox.showerror("Search Error", str(e))
@@ -193,11 +210,267 @@ class RequestListPage:
         self.requests_tree.heading(col, command=lambda: self.sort_column(col, not reverse))
     
     def refresh_requests(self):
-        """Refresh requests list"""
+        """Refresh requests list with default view"""
         # Reset search and filters
         self.search_var.set("Search requests...")
         self.category_var.set('All')
         self.status_var.set('All')
         
-        # Fetch and display requests
-        self.search_requests()
+        # Clear existing items
+        for item in self.requests_tree.get_children():
+            self.requests_tree.delete(item)
+        
+        # Fetch all requests by default
+        try:
+            # Get current user ID from session
+            user_id = self.user_info.get('unique_id')
+            
+            # Fetch requests filtered by the current user's donor_id
+            requests = self.db.search_requests(donor_id=user_id)
+            
+            # Populate treeview
+            if requests:
+                for request in requests:
+                    self.requests_tree.insert('', 'end', values=(
+                        request.get('request_message', 'N/A')[:50],  # Use request message as title
+                        request.get('donation_title', 'N/A'),  # Show donation title
+                        request.get('requester_name', 'Unknown'),
+                        request.get('status', 'Unknown').capitalize(), 
+                        request.get('created_at', 'N/A')
+                    ))
+                
+                # Update status var to reflect the number of requests
+                status_text = f"Requests: {len(requests)}"
+                self.status_var.set(status_text)
+            else:
+                # Show a more informative message
+                messagebox.showinfo("No Requests", 
+                    "No donation requests found. You can create a new request from the Donations page.")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load requests: {str(e)}")
+            print(f"Request loading error: {e}")
+
+    def on_request_select(self, event):
+        """Enable/disable buttons based on request selection"""
+        selected_items = self.requests_tree.selection()
+        if selected_items:
+            self.accept_button.config(state=tk.NORMAL)
+            self.deny_button.config(state=tk.NORMAL)
+            
+            # Show request details
+            selected_item = self.requests_tree.item(selected_items[0])
+            self.show_request_details(selected_item['values'])
+        else:
+            self.accept_button.config(state=tk.DISABLED)
+            self.deny_button.config(state=tk.DISABLED)
+
+    def show_request_details(self, request_values):
+        """Display detailed information about the selected request"""
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Request Details")
+        details_window.geometry("700x600")
+        
+        try:
+            # Get the request details
+            request_message = request_values[0]
+            request_details = self.db.get_request_details_by_message(request_message)
+            
+            if not request_details:
+                messagebox.showerror("Error", "Could not fetch request details.")
+                return
+            
+            # Create main container frame
+            main_frame = tk.Frame(details_window)
+            main_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+            
+            # Safe get function to handle missing keys
+            def safe_get(dictionary, key, default='N/A'):
+                return str(dictionary.get(key, default))
+            
+            # Create sections for different details
+            sections = [
+                # Donation Details Section
+                {
+                    'title': 'Donation Information',
+                    'details': [
+                        ("Title", safe_get(request_details, 'donation_title')),
+                        ("Description", safe_get(request_details, 'donation_description')),
+                        ("Category", safe_get(request_details, 'donation_category')),
+                        ("Condition", safe_get(request_details, 'donation_condition')),
+                        ("Location", f"{safe_get(request_details, 'donation_city')}, {safe_get(request_details, 'donation_state')}")
+                    ]
+                },
+                # Donor Details Section
+                {
+                    'title': 'Donor Information',
+                    'details': [
+                        ("Name", safe_get(request_details, 'donor_name')),
+                        ("Email", safe_get(request_details, 'donor_email'))
+                    ]
+                },
+                # Request Details Section
+                {
+                    'title': 'Request Details',
+                    'details': [
+                        ("Request Message", safe_get(request_details, 'request_message')),
+                        ("Status", safe_get(request_details, 'request_status')),
+                        ("Created At", safe_get(request_details, 'request_created_at')),
+                        ("Updated At", safe_get(request_details, 'request_updated_at'))
+                    ]
+                },
+                # Requester Details Section
+                {
+                    'title': 'Requester Information',
+                    'details': [
+                        ("Username", safe_get(request_details, 'requester_username')),
+                        ("Email", safe_get(request_details, 'requester_email'))
+                    ]
+                }
+            ]
+            
+            # Create a canvas with scrollbar for better layout
+            canvas = tk.Canvas(main_frame)
+            scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = tk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            
+            # Populate sections
+            for section in sections:
+                # Section title
+                tk.Label(
+                    scrollable_frame, 
+                    text=section['title'], 
+                    font=('Arial', 12, 'bold')
+                ).pack(pady=(10, 5), anchor='w')
+                
+                # Details in each section
+                for label, value in section['details']:
+                    details_frame = tk.Frame(scrollable_frame)
+                    details_frame.pack(fill='x', padx=10, pady=2)
+                    
+                    tk.Label(
+                        details_frame, 
+                        text=f"{label}:", 
+                        font=('Arial', 10, 'bold'), 
+                        width=20, 
+                        anchor='w'
+                    ).pack(side='left')
+                    
+                    tk.Label(
+                        details_frame, 
+                        text=str(value), 
+                        font=('Arial', 10), 
+                        wraplength=400, 
+                        anchor='w'
+                    ).pack(side='left', expand=True, fill='x')
+            
+            # Add a close button
+            close_button = tk.Button(
+                details_window, 
+                text="Close", 
+                command=details_window.destroy
+            )
+            close_button.pack(side=tk.BOTTOM, pady=10)
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load request details: {str(e)}")
+            print(f"Request details error: {e}")
+
+    def accept_request(self):
+        """Accept the selected donation request"""
+        selected_items = self.requests_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a request to accept.")
+            return
+        
+        try:
+            # Get the selected request's details
+            selected_item = self.requests_tree.item(selected_items[0])
+            request_message = selected_item['values'][0]
+            
+            # Get the request details to get the unique_id
+            request_details = self.db.get_request_details_by_message(request_message)
+            
+            if not request_details:
+                messagebox.showerror("Error", "Could not find request details.")
+                return
+                
+            # Debug information
+            print(f"Request details keys: {request_details.keys()}")
+            
+            # Check if we have the correct key for the unique_id
+            if 'request_unique_id' not in request_details:
+                messagebox.showerror("Error", "Request unique ID not found in details.")
+                return
+            
+            # Process the donation request with user_id from session
+            user_id = self.user_info.get('unique_id')
+            if not user_id:
+                messagebox.showerror("Error", "User ID not found in session.")
+                return
+                
+            success, message = self.db.process_donation_request(request_details['request_unique_id'], 'accept', user_id)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_requests()  # Refresh the list
+            else:
+                messagebox.showerror("Error", message)
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+
+    def deny_request(self):
+        """Deny the selected donation request"""
+        selected_items = self.requests_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a request to deny.")
+            return
+        
+        try:
+            # Get the selected request's details
+            selected_item = self.requests_tree.item(selected_items[0])
+            request_message = selected_item['values'][0]
+            
+            # Get the request details to get the unique_id
+            request_details = self.db.get_request_details_by_message(request_message)
+            
+            if not request_details:
+                messagebox.showerror("Error", "Could not find request details.")
+                return
+                
+            # Debug information
+            print(f"Request details keys: {request_details.keys()}")
+            
+            # Check if we have the correct key for the unique_id
+            if 'request_unique_id' not in request_details:
+                messagebox.showerror("Error", "Request unique ID not found in details.")
+                return
+            
+            # Process the donation request with user_id from session
+            user_id = self.user_info.get('unique_id')
+            if not user_id:
+                messagebox.showerror("Error", "User ID not found in session.")
+                return
+                
+            success, message = self.db.process_donation_request(request_details['request_unique_id'], 'reject', user_id)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_requests()  # Refresh the list
+            else:
+                messagebox.showerror("Error", message)
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")

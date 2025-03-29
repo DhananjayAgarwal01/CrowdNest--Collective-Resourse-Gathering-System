@@ -17,6 +17,7 @@ from src.pages.donation_list_page import DonationListPage
 from src.pages.profile_page import ProfilePage
 from src.pages.donation_history_page import DonationHistoryPage
 from src.pages.request_list_page import RequestListPage
+from src.pages.accepted_requests_page import AcceptedRequestsPage
 from src.ui.modern_ui import ModernUI
 from src.ui.navigation import NavigationPane
 
@@ -69,7 +70,8 @@ class CrowdNestApp:
             'DonationFormPage': DonationFormPage,
             'DonationHistoryPage': DonationHistoryPage,
             'ProfilePage': ProfilePage,
-            'RequestListPage': RequestListPage
+            'RequestListPage': RequestListPage,
+            'AcceptedRequestsPage': AcceptedRequestsPage
         }
 
         # Create frames dynamically
@@ -102,7 +104,8 @@ class CrowdNestApp:
                 'DonationFormPage', 
                 'DonationHistoryPage', 
                 'ProfilePage',
-                'RequestListPage'
+                'RequestListPage',
+                'AcceptedRequestsPage'
             ]
 
             # Check if authentication is required for this frame
@@ -220,7 +223,8 @@ class CrowdNestApp:
                 'DonationFormPage': DonationFormPage,
                 'DonationHistoryPage': DonationHistoryPage,
                 'ProfilePage': ProfilePage,
-                'RequestListPage': RequestListPage
+                'RequestListPage': RequestListPage,
+                'AcceptedRequestsPage': AcceptedRequestsPage
             }
             
             # Create authenticated frames with actual user data
