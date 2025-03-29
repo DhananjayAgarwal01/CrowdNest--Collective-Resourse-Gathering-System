@@ -3,45 +3,40 @@
 ## System Block Diagram (Text Version)
 
 ```
-+---------------------------- CrowdNest System ----------------------------+
-|                                                                          |
-|  +------------------------ Presentation Layer ------------------------+    |
-|  |                                                                  |    |
-|  |  +-------------+  +-------------+  +----------------+            |    |
-|  |  | Login       |  | Dashboard   |  | Donation Form  |            |    |
-|  |  | Registration|  | User Profile|  | Request Form   |            |    |
-|  |  +-------------+  +-------------+  +----------------+            |    |
-|  |                                                                  |    |
-|  +------------------------------------------------------------------+  |
-|                                                                          |
-|  +----------------------- Business Logic Layer ----------------------+    |
-|  |                                                                  |    |
-|  |  +-----------------+  +------------------+  +----------------+   |    |
-|  |  | Authentication  |  | Donation/Request |  | User Management|   |    |
-|  |  | - Password Hash |  | Management       |  | - Profile      |   |    |
-|  |  | - Sessions     |  | - Processing     |  | - History      |   |    |
-|  |  +-----------------+  | - Validation     |  +----------------+   |    |
-|  |                      | - Notifications  |                        |    |
-|  |                      +------------------+                        |    |
-|  |                                                                  |    |
-|  +------------------------------------------------------------------+  |
-|                                                                          |
-|  +--------------------------- Data Layer --------------------------+    |
-|  |                                                                  |    |
-|  |  +------------+  +-------------+  +------------+  +-----------+   |    |
-|  |  | Users      |  | Donations   |  | Requests   |  | Sessions  |   |    |
-|  |  | Table      |  | Table       |  | Table      |  | Table     |   |    |
-|  |  +------------+  +-------------+  +------------+  +-----------+   |    |
-|  |                                                                  |    |
-|  +------------------------------------------------------------------+  |
-|                                                                          |
-+--------------------------------------------------------------------------+
++-------------------+
+|    Frontend UI    |
+|   (Tkinter)   |
++--------+----------+
+         |
+         v
++--------+----------+
+|   Application     |
+|    Controller     |
++--------+----------+
+         |
+         v
++--------+----------+
+|   Service Layer   |
+| - User Management |
+| - Donation Mgmt   |
+| - Request Handling|
++--------+----------+
+         |
+         v
++--------+----------+
+|  Database Layer   |
+| - MySQL Database  |
+| - Tables:         |
+|   * users         |
+|   * donations     |
+|   * donation_req  |
++-------------------+
 ```
 
 ```mermaid
 flowchart TB
-    subgraph PL[Presentation Layer]
-        UI[User Interface]
+    subgraph FL[Frontend Layer]
+        UI[Tkinter/Web Interface]
         style UI fill:#f9f,stroke:#333,stroke-width:2px
         subgraph UI_Components
             Login[Login Screen]
@@ -53,85 +48,99 @@ flowchart TB
         end
     end
 
-    subgraph BL[Business Logic Layer]
-        style BL fill:#bbf,stroke:#333,stroke-width:2px
-        Auth[Authentication Service]
-        DonationMgmt[Donation Management]
-        RequestMgmt[Request Management]
-        UserMgmt[User Management]
-        EmailService[Email Service]
-        
-        subgraph Security
-            Hashing[Password Hashing]
-            Session[Session Management]
-            Validation[Input Validation]
-        end
+    subgraph CL[Controller Layer]
+        style CL fill:#ffd,stroke:#333,stroke-width:2px
+        AppController[Application Controller]
+        Router[Request Router]
+        StateManager[State Management]
     end
 
-    subgraph DL[Data Layer]
+    subgraph SL[Service Layer]
+        style SL fill:#bbf,stroke:#333,stroke-width:2px
+        UserService[User Management]
+        DonationService[Donation Management]
+        RequestService[Request Handling]
+        AuthService[Authentication]
+        ValidationService[Validation Service]
+    end
+
+    subgraph DL[Database Layer]
         style DL fill:#bfb,stroke:#333,stroke-width:2px
         DB[(MySQL Database)]
         subgraph Tables
-            Users[(Users)]
-            Donations[(Donations)]
-            Requests[(Requests)]
-            Sessions[(Sessions)]
+            Users[(users)]
+            Donations[(donations)]
+            DonationReq[(donation_req)]
         end
     end
 
     %% Connections
-    UI --> Auth
-    UI --> DonationMgmt
-    UI --> RequestMgmt
-    UI --> UserMgmt
+    UI --> AppController
+    AppController --> Router
+    Router --> StateManager
     
-    Auth --> Hashing
-    Auth --> Session
-    Auth --> DB
+    Router --> UserService
+    Router --> DonationService
+    Router --> RequestService
+    Router --> AuthService
     
-    DonationMgmt --> Validation
-    DonationMgmt --> DB
-    DonationMgmt --> EmailService
+    UserService --> ValidationService
+    DonationService --> ValidationService
+    RequestService --> ValidationService
     
-    RequestMgmt --> Validation
-    RequestMgmt --> DB
-    RequestMgmt --> EmailService
-    
-    UserMgmt --> DB
-    UserMgmt --> EmailService
+    UserService --> DB
+    DonationService --> DB
+    RequestService --> DB
+    AuthService --> DB
 
     %% Database Connections
     DB --> Users
     DB --> Donations
-    DB --> Requests
-    DB --> Sessions
+    DB --> DonationReq
 ```
 
 ## Layer Descriptions
 
-### Presentation Layer
-- Modern Tkinter-based GUI
-- Responsive user interface components
-- Intuitive navigation and forms
+### Frontend Layer (Tkinter/Web)
+- Modern Tkinter-based GUI interface
+- Responsive and intuitive user components
+- Form handling and validation
 - Real-time status updates
+- Event handling and user interactions
 
-### Business Logic Layer
-- Authentication with SHA-256 hashing
-- Session management and security
-- Donation and request processing
-- Email notifications via SMTP
-- Input validation and sanitization
+### Application Controller Layer
+- Central request routing and handling
+- State management and data flow control
+- Component coordination
+- Error handling and logging
+- Session management
 
-### Data Layer
+### Service Layer
+- User Management Service
+  * User registration and authentication
+  * Profile management
+  * Access control
+- Donation Management Service
+  * Donation processing
+  * Resource allocation
+  * Status tracking
+- Request Handling Service
+  * Request validation
+  * Request processing
+  * Notification handling
+
+### Database Layer
 - MySQL database for persistent storage
-- Optimized table structures
-- Secure data access
-- Efficient query handling
+- Core tables:
+  * users: User information and credentials
+  * donations: Donation records and status
+  * donation_req: Request tracking and management
+- Optimized query handling
+- Data integrity and security
 
 ## Key Features
-- Secure user authentication
-- Resource donation management
-- Request processing system
-- Email notifications
-- Profile management
-- History tracking
+- Clean separation of concerns across layers
+- Centralized request handling through controller
+- Modular service architecture
+- Secure data management
+- Scalable component structure
