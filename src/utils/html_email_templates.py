@@ -171,124 +171,46 @@ class HTMLEmailTemplates:
         :param request_details: Dictionary containing request information
         :return: HTML email template as a string
         """
-        # Determine color and message based on status
-        if status.lower() == 'approved':
-            status_color = '#28a745'  # Green
-            status_message = 'Approved'
-            status_icon = '✅'
-            additional_message = (
-                "Great news! Your donation request has been carefully reviewed and approved. "
-                "Our team will guide you through the next steps of the donation process."
-            )
-        elif status.lower() == 'rejected':
-            status_color = '#dc3545'  # Red
-            status_message = 'Rejected'
-            status_icon = '❌'
-            additional_message = (
-                "We regret to inform you that your donation request could not be processed at this time. "
-                "Our team carefully reviews each request to ensure the best match for community needs."
-            )
-        else:
-            status_color = '#6c757d'  # Gray
-            status_message = status.capitalize()
-            status_icon = '❓'
-            additional_message = "Your donation request status has been updated."
-        
         # Extract request details with fallback values
         requester_name = request_details.get('requester_username', 'Valued Donor')
         donation_title = request_details.get('donation_title', 'Unnamed Donation')
         request_message = request_details.get('request_message', 'No additional details')
         
-        html_template = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>CrowdNest - Donation Request Status</title>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background-color: #f4f4f4;
-                }}
-                .container {{
-                    background-color: white;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    padding: 30px;
-                }}
-                .header {{
-                    text-align: center;
-                    border-bottom: 2px solid {status_color};
-                    padding-bottom: 15px;
-                    margin-bottom: 20px;
-                }}
-                .status {{
-                    color: {status_color};
-                    font-size: 24px;
-                    font-weight: bold;
-                    text-align: center;
-                    margin-bottom: 20px;
-                }}
-                .details {{
-                    background-color: #f9f9f9;
-                    border-left: 4px solid {status_color};
-                    padding: 15px;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    text-align: center;
-                    color: #777;
-                    font-size: 12px;
-                    margin-top: 20px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>CrowdNest Donation Request Update</h1>
-                </div>
-                
-                <div class="status">
-                    {status_icon} Request {status_message}
-                </div>
-                
-                <p>Dear {requester_name},</p>
-                
-                <p>{additional_message}</p>
-                
-                <div class="details">
-                    <h3>Request Details:</h3>
-                    <ul>
-                        <li><strong>Donation:</strong> {donation_title}</li>
-                        <li><strong>Your Request:</strong> {request_message}</li>
-                        <li><strong>Status:</strong> <span style="color: {status_color};">{status_message}</span></li>
-                    </ul>
-                </div>
-                
-                <p>
-                    If you have any questions or need further clarification, 
-                    please don't hesitate to contact our support team.
-                </p>
-                
-                <div class="footer">
-                    <p>
-                        &copy; 2025 CrowdNest. All rights reserved.<br>
-                        Connecting Communities Through Compassionate Giving
-                    </p>
-                </div>
+        if status.lower() == 'approved':
+            return HTMLEmailTemplates.donation_request_accepted_template(
+                requester_name,
+                donation_title,
+                request_details.get('donor_username', 'Donor'),
+                request_details.get('donor_email', '')
+            )
+        elif status.lower() == 'rejected':
+            return HTMLEmailTemplates.donation_request_rejected_template(
+                requester_name,
+                donation_title
+            )
+        else:
+            content = f"""
+            <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; font-size: 16px; line-height: 1.6;">Dear {requester_name},</p>
+            
+            <div style="background-color: {HTMLEmailTemplates.SECONDARY_COLOR}; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; margin: 0;">Your donation request for {donation_title} has been updated.</p>
             </div>
-        </body>
-        </html>
-        """
-        
-        return html_template
+            
+            <div style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid {HTMLEmailTemplates.PRIMARY_COLOR}; margin: 20px 0;">
+                <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; margin: 0;">Status: {status.capitalize()}</p>
+                <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; margin: 10px 0 0 0;">Your Request: {request_message}</p>
+            </div>
+            
+            <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; font-size: 16px; line-height: 1.6;">
+                If you have any questions, please don't hesitate to contact our support team.
+            </p>
+            
+            <p style="color: {HTMLEmailTemplates.TEXT_COLOR}; font-size: 16px; line-height: 1.6;">
+                Best regards,<br>
+                <span style="color: {HTMLEmailTemplates.PRIMARY_COLOR};">The CrowdNest Team</span>
+            </p>
+            """
+            return HTMLEmailTemplates._get_base_template(content)
 
     @staticmethod
     def generate_request_status_plain_text(status, request_details):
@@ -525,6 +447,9 @@ CrowdNest Team
                     </p>
                     
                     <p>We recommend reaching out to the donor soon to discuss the details of your donation.</p>
+                    Best regards,<br>
+                    <span style="color: {HTMLEmailTemplates.PRIMARY_COLOR};">The CrowdNest Team</span>
+                
                 </div>
                 <div class="footer">
                     <p> 2024 CrowdNest. All rights reserved.</p>
@@ -576,6 +501,8 @@ CrowdNest Team
                     <p>We encourage you to continue exploring other available donations on CrowdNest. Our platform is constantly updated with new opportunities.</p>
                     
                     <p>Don't get discouraged! Keep searching and you'll find the perfect donation.</p>
+                    Best regards,<br>
+                    <span style="color: {HTMLEmailTemplates.PRIMARY_COLOR};">The CrowdNest Team</span>
                 </div>
                 <div class="footer">
                     <p> 2024 CrowdNest. All rights reserved.</p>

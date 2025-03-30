@@ -709,7 +709,7 @@ class DatabaseHandler:
         """
         try:
             # Validate status
-            valid_statuses = ['available', 'unavailable', 'pending', 'completed']
+            valid_statuses = ['available', 'unavailable', 'pending', 'completed', 'reserved', 'withdrawn']
             if new_status.lower() not in valid_statuses:
                 print(f"Invalid donation status: {new_status}")
                 return False
@@ -1448,7 +1448,7 @@ class DatabaseHandler:
         """
         try:
             # Validate status
-            valid_statuses = ['available', 'unavailable', 'pending', 'completed']
+            valid_statuses = ['available', 'unavailable', 'pending', 'completed', 'reserved', 'withdrawn']
             if new_status.lower() not in valid_statuses:
                 print(f"Invalid donation status: {new_status}")
                 return False
@@ -1612,8 +1612,8 @@ class DatabaseHandler:
                 u_donor.username as donor_username,
                 u_donor.email as donor_email
             FROM donation_requests dr
-            JOIN donations d ON dr.donation_id = d.unique_id
             JOIN users u_requester ON dr.requester_id = u_requester.unique_id
+            JOIN donations d ON dr.donation_id = d.unique_id
             JOIN users u_donor ON d.donor_id = u_donor.unique_id
             WHERE dr.unique_id = %s
             FOR UPDATE  # Lock the row to prevent concurrent modifications
@@ -1672,12 +1672,12 @@ class DatabaseHandler:
                 WHERE unique_id = %s
                 """
                 
-                # Update donation status to pending
+                # Update donation status to reserved
                 update_donation_query = """
                 UPDATE donations d
                 JOIN donation_requests dr ON d.unique_id = dr.donation_id
                 SET 
-                    d.status = 'pending',
+                    d.status = 'reserved',
                     d.updated_at = CURRENT_TIMESTAMP
                 WHERE dr.unique_id = %s
                 """
@@ -2143,81 +2143,230 @@ class DatabaseHandler:
             print(f"Unexpected error retrieving donation history: {e}")
             return []
 
-    def search_donations(self, search_term=None, category=None, location=None, title=None):
+    def mark_request_delivered(self, request_id):
         """
-        Search donations with mandatory 'available' status filter
+        Mark a donation request as delivered and send confirmation emails
         
-        :param search_term: Optional keyword to search in title or description
-        :param category: Optional category filter
-        :param location: Optional location filter
-        :param title: Optional title filter
-        :return: List of available donations matching search criteria
+        :param request_id: Unique ID of the request to mark as delivered
+        :return: Boolean indicating success
         """
         try:
-            # Ensure database connection is active
-            if not self.connection.is_connected():
-                self.reconnect()
+            # Get request details including donation and user information
+            request_details = self.get_request_details(request_id)
             
-            # Base query with mandatory 'available' status filter
-            query = """
+            if not request_details:
+                print(f"Could not find request with ID: {request_id}")
+                return False
+            
+            # Update request status to completed
+            update_query = "UPDATE donation_requests SET status = 'completed', updated_at = NOW() WHERE unique_id = %s"
+            self.cursor.execute(update_query, (request_id,))
+            
+            # Update donation status to completed
+            if request_details['donation_id']:
+                donation_update = "UPDATE donations SET status = 'completed' WHERE unique_id = %s"
+                self.cursor.execute(donation_update, (request_details['donation_id'],))
+            
+            self.connection.commit()
+            
+            # Send confirmation emails
+            try:
+                # Email to requester
+                requester_subject = "Donation Delivery Confirmed"
+                requester_body = f"""Dear {request_details['requester_username']},
+
+Your requested donation has been marked as delivered:
+
+Donation: {request_details['donation_title']}
+Donor: {request_details['donor_name']}
+Status: Delivered
+
+Thank you for using CrowdNest!"""
+                
+                send_email(
+                    to_email=request_details['requester_email'],
+                    subject=requester_subject,
+                    body=requester_body
+                )
+                
+                # Email to donor
+                donor_subject = "Donation Delivery Confirmation"
+                donor_body = f"""Dear {request_details['donor_name']},
+
+Your donation has been successfully delivered:
+
+Donation: {request_details['donation_title']}
+Receiver: {request_details['requester_username']}
+Status: Delivered
+
+Thank you for your generosity!"""
+                
+                send_email(
+                    to_email=request_details['donor_email'],
+                    subject=donor_subject,
+                    body=donor_body
+                )
+                
+            except Exception as e:
+                print(f"Error sending confirmation emails: {e}")
+                # Continue execution even if email sending fails
+            
+            return True
+            
+        except mysql.connector.Error as e:
+            print(f"Database error marking request as delivered: {e}")
+            self.connection.rollback()
+            return False
+        except Exception as e:
+            print(f"Unexpected error marking request as delivered: {e}")
+            self.connection.rollback()
+            return False
+    
+    def search_donations(self, search_term=None, category=None, state=None, city=None, page=1, page_size=10):
+        """
+        Search for donations with comprehensive filtering and pagination
+
+        :param search_term: Optional text to search in title or description
+        :param category: Optional donation category filter
+        :param state: Optional state location filter
+        :param city: Optional city location filter
+        :param page: Page number for pagination (default 1)
+        :param page_size: Number of results per page (default 10)
+        :return: Dictionary with donations and pagination info
+        """
+        try:
+            # Validate page and page_size
+            page = max(1, page)
+            page_size = max(1, min(page_size, 50))  # Limit max page size
+            offset = (page - 1) * page_size
+
+            # Prepare base filtering conditions
+            conditions = ["d.status = 'available'"]
+            params = []
+            
+            # Search term filter (if provided)
+            if search_term:
+                conditions.append("(d.title LIKE %s OR d.description LIKE %s)")
+                search_param = f"%{search_term}%"
+                params.extend([search_param, search_param])
+            
+            # Category filter
+            if category and category.lower() != 'all categories':
+                conditions.append("d.category = %s")
+                params.append(category)
+            
+            # State filter
+            if state and state.lower() != 'all locations':
+                conditions.append("d.state = %s")
+                params.append(state)
+            
+            # City filter
+            if city:
+                conditions.append("d.city = %s")
+                params.append(city)
+            
+            # Combine conditions
+            where_clause = " AND ".join(conditions)
+
+            # Donations query
+            donations_query = f"""
             SELECT 
-                d.unique_id, 
-                d.title, 
-                d.description, 
-                d.category, 
-                d.`condition`, 
-                d.state, 
-                d.city, 
+                d.unique_id,
+                d.title,
+                d.description,
+                d.category,
+                d.`condition`,
+                d.state,
+                d.city,
                 d.status,
-                d.created_at, 
-                d.image_path, 
+                d.created_at,
+                d.image_path,
                 u.username as donor_name,
                 u.email as donor_email
             FROM donations d
             JOIN users u ON d.donor_id = u.unique_id
-            WHERE d.status = 'available'
+            WHERE {where_clause}
+            ORDER BY d.created_at DESC
+            LIMIT %s OFFSET %s
             """
             
-            # Parameters list for query
-            params = []
+            # Add pagination parameters
+            pagination_params = params + [page_size, offset]
             
-            # Add search term filter if provided
-            if search_term:
-                query += " AND (d.title LIKE %s OR d.description LIKE %s)"
-                search_param = f"%{search_term}%"
-                params.extend([search_param, search_param])
-            
-            # Add category filter if provided and not 'All Categories'
-            if category and category.lower() != 'all categories':
-                query += " AND d.category = %s"
-                params.append(category)
-            
-            # Add location filter if provided and not 'All Locations'
-            if location and location.lower() != 'all locations':
-                query += " AND d.state = %s"
-                params.append(location)
-            
-            # Add title filter if provided
-            if title:
-                query += " AND d.title LIKE %s"
-                params.append(f"%{title}%")
-            
-            # Order by most recent first
-            query += " ORDER BY d.created_at DESC"
-            
-            # Execute query
-            self.cursor.execute(query, params)
+            # Execute donations query
+            self.cursor.execute(donations_query, pagination_params)
             donations = self.cursor.fetchall()
+
+            # Count query
+            count_query = f"""
+            SELECT COUNT(*) as total_count
+            FROM donations d
+            JOIN users u ON d.donor_id = u.unique_id
+            WHERE {where_clause}
+            """
             
-            return donations
+            # Execute count query
+            self.cursor.execute(count_query, params)
+            count_result = self.cursor.fetchone()
+            
+            # Get total count
+            total_count = count_result['total_count'] if count_result else 0
+
+            # Prepare return dictionary
+            return {
+                'donations': [
+                    {
+                        'unique_id': donation['unique_id'],
+                        'title': donation['title'],
+                        'description': donation['description'],
+                        'category': donation['category'],
+                        'condition': donation['condition'],
+                        'state': donation['state'],
+                        'city': donation['city'],
+                        'status': donation['status'],
+                        'created_at': donation['created_at'],
+                        'image_path': donation['image_path'],
+                        'donor_name': donation['donor_name'],
+                        'donor_email': donation['donor_email']
+                    } for donation in donations
+                ],
+                'pagination': {
+                    'total_count': total_count,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': (total_count + page_size - 1) // page_size
+                }
+            }
         
         except mysql.connector.Error as e:
-            print(f"Error searching donations: {e}")
-            return []
+            print(f"MySQL Connector Error searching donations: {e}")
+            # Additional error details
+            if hasattr(e, 'errno'):
+                print(f"MySQL Error Number: {e.errno}")
+                print(f"MySQL Error State: {e.sqlstate}")
+            return {
+                'donations': [],
+                'pagination': {
+                    'total_count': 0,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': 0
+                }
+            }
         
         except Exception as e:
             print(f"Unexpected error searching donations: {e}")
-            return []
+            import traceback
+            traceback.print_exc()
+            return {
+                'donations': [],
+                'pagination': {
+                    'total_count': 0,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': 0
+                }
+            }
         
         finally:
             # Ensure cursor is reset
@@ -2235,7 +2384,7 @@ class DatabaseHandler:
         :return: Tuple (success_bool, message_str)
         """
         # Validate input
-        valid_statuses = ['available', 'pending', 'completed', 'withdrawn']
+        valid_statuses = ['available', 'unavailable', 'pending', 'completed', 'reserved', 'withdrawn']
         if new_status not in valid_statuses:
             return False, f"Invalid status. Must be one of {valid_statuses}"
         
@@ -2573,7 +2722,7 @@ class DatabaseHandler:
         :param donor_id: Unique ID of the donor
         :param page: Page number for pagination
         :param per_page: Number of requests per page
-        :return: Dictionary containing donation requests and pagination info
+        :return: Dictionary with donation requests and pagination info
         """
         try:
             # Ensure database connection is active

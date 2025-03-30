@@ -87,6 +87,12 @@ class DonationRequestsPage:
         # Buttons
         ttk.Button(
             button_frame, 
+            text="Refresh",
+            command=self.manual_refresh
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            button_frame, 
             text="View Request Details", 
             command=self.view_request_details
         ).pack(side='left', padx=5)
@@ -120,6 +126,11 @@ class DonationRequestsPage:
             text="Back to Dashboard", 
             command=lambda: self.show_frame('dashboard')
         ).pack(side='right', padx=5)
+
+    def manual_refresh(self):
+        """Handle manual refresh button click"""
+        self._is_manual_refresh = True
+        self.refresh_donation_requests()
 
     def refresh_donation_requests(self):
         """Refresh requests in treeview with comprehensive error handling"""
@@ -169,10 +180,13 @@ class DonationRequestsPage:
                     str(request.get('created_at', 'N/A'))
                 ))
             
-            # If no requests found, show informative message
-            if not requests:
-                print("No donation requests found.")
-                messagebox.showinfo("No Requests", "No donation requests found for your account.")
+            # Only show popup for manual refresh when no requests found
+            if not requests and hasattr(self, '_is_manual_refresh') and self._is_manual_refresh:
+                messagebox.showinfo("No Requests", "No donation requests found.")
+                self._is_manual_refresh = False  # Reset the flag
+            elif not requests:
+                print(f"DEBUG: No donation requests found for user ID: {self.user_info.get('unique_id', 'Unknown')}")
+            return
         
         except Exception as e:
             # Comprehensive error logging

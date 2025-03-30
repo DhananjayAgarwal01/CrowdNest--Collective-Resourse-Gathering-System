@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox
 from src.ui.modern_ui import ModernUI
 from src.constants import COLORS, CATEGORIES, LOCATIONS, STATES
 from src.database.database_handler import DatabaseHandler
+from src.utils.email_sender import send_email
+from src.utils.html_email_templates import HTMLEmailTemplates
 
 class RequestListPage:
     def __init__(self, parent, user_info, show_frame_callback):
@@ -242,11 +244,7 @@ class RequestListPage:
                 # Update status var to reflect the number of requests
                 status_text = f"Requests: {len(requests)}"
                 self.status_var.set(status_text)
-            else:
-                # Show a more informative message
-                messagebox.showinfo("No Requests", 
-                    "No donation requests found. You can create a new request from the Donations page.")
-        
+           
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load requests: {str(e)}")
             print(f"Request loading error: {e}")

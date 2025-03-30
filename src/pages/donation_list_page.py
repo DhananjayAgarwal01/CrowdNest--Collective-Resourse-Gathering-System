@@ -1,5 +1,5 @@
+from tkinter import ttk, messagebox, simpledialog, StringVar as tkStringVar
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
 from src.ui.modern_ui import ModernUI
 from src.utils.email_validator import EmailValidator
 from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS, STATES
@@ -7,6 +7,7 @@ from src.database.database_handler import DatabaseHandler
 import os
 from PIL import Image, ImageTk
 import io
+from src.utils.email_validator import EmailValidator
 
 class DonationListPage:
     def __init__(self, parent, user_info, show_frame_callback):
@@ -111,7 +112,6 @@ class DonationListPage:
                 'Title', 
                 'Category', 
                 'Description', 
-                'Quantity', 
                 'Status'
             ), 
             show='headings'
@@ -196,27 +196,29 @@ class DonationListPage:
         
         # Fetch donations if not provided
         if donations is None:
-            donations = self.db.search_donations()
+            donations_result = self.db.search_donations()
+            donations = donations_result.get('donations', [])
         
-        # Debug: print donations type and first item
-        print("Donations type:", type(donations))
-        if donations:
-            print("First donation type:", type(donations[0]))
-            print("First donation keys:", list(donations[0].keys()) if isinstance(donations[0], dict) else "Not a dictionary")
+        # Check if donations list is empty
+        if not donations:
+            # Insert a "No Donations" row instead of showing a popup
+            self.donations_tree.insert('', 'end', values=(
+                'N/A', 
+                'No Donations Available', 
+                'N/A', 
+                'There are currently no donations matching your search criteria.', 
+                'N/A'
+            ))
+            return
         
         # Populate treeview
         for donation in donations:
-            # Debug: check donation type
-            if not isinstance(donation, dict):
-                print("WARNING: Donation is not a dictionary:", type(donation))
-                continue
-            
             self.donations_tree.insert('', 'end', values=(
+                donation.get('unique_id', ''),
                 donation.get('title', ''),
                 donation.get('category', ''),
-                donation.get('condition', ''),
-                f"{donation.get('city', '')}, {donation.get('state', '')}",
-                donation.get('donor_name', '')
+                donation.get('description', ''),
+                donation.get('status', '')
             ))
 
     def copy_to_clipboard(self, text):
@@ -260,39 +262,20 @@ class DonationListPage:
     def search_donations(self):
         """Search and filter donations based on user input"""
         # Get search parameters
-        search_query = self.search_var.get().strip()
+        search_term = self.search_var.get().strip()
         category = self.category_var.get()
         location = self.location_var.get()
 
-        # Prepare filter conditions
-        filter_conditions = {}
-        
-        # Add search query filter
-        if search_query:
-            filter_conditions['search_query'] = search_query
+        # Perform search
+        search_result = self.db.search_donations(
+            search_term=search_term if search_term else None,
+            category=category if category != 'All Categories' else None,
+            state=location if location != 'All Locations' else None
+        )
 
-        # Add category filter
-        if category and category != 'All Categories':
-            filter_conditions['category'] = category
-
-        # Add location filter
-        if location and location != 'All Locations':
-            filter_conditions['location'] = location
-
-        # Fetch filtered donations
-        try:
-            # Fetch donations based on filter conditions
-            filtered_donations = self.db.search_donations(**filter_conditions)
-            
-            # Refresh donations treeview
-            self.refresh_donations(filtered_donations)
-            
-            # Optional: Show message if no donations found
-            if not filtered_donations:
-                messagebox.showinfo("Search Results", "No donations found matching your criteria.")
-        
-        except Exception as e:
-            messagebox.showerror("Search Error", f"An error occurred while searching: {e}")
+        # Refresh donations with search results
+        donations = search_result.get('donations', [])
+        self.refresh_donations(donations)
 
     def view_donation_details_btn(self):
         """
@@ -316,28 +299,23 @@ class DonationListPage:
             return
         
         # Extract details based on treeview columns
-        title = donation_details[0]
-        category = donation_details[1]
-        condition = donation_details[2]
-        location = donation_details[3]
-        donor_name = donation_details[4]
+        unique_id = donation_details[0]
+        title = donation_details[1]
+        category = donation_details[2]
+        description = donation_details[3]
+        status = donation_details[4]
         
         # Open donation details view
         try:
-            # Fetch all donations to find the matching one
-            donations = self.db.search_donations()
+            # Fetch specific donation details
+            donation_result = self.db.get_donation_details(unique_id)
             
-            # Find the matching donation
-            matching_donation = next(
-                (donation for donation in donations 
-                 if (donation.get('title') == title and 
-                     donation.get('category') == category and 
-                     donation.get('condition') == condition and 
-                     donation.get('donor_name') == donor_name)),
-                None
-            )
+            # Handle case where donation_result might be a string or None
+            if isinstance(donation_result, str):
+                messagebox.showerror("Error", donation_result)
+                return
             
-            if not matching_donation:
+            if not donation_result:
                 messagebox.showerror("Error", f"Could not find details for donation: {title}")
                 return
             
@@ -358,7 +336,7 @@ class DonationListPage:
             right_frame.pack(side='right', fill='both', expand=True, padx=10)
             
             # Donation Image
-            image_path = matching_donation.get('image_path')
+            image_path = donation_result.get('image_path')
             if image_path and os.path.exists(image_path):
                 try:
                     original_image = Image.open(image_path)
@@ -373,18 +351,26 @@ class DonationListPage:
                     print(f"Error loading image: {img_err}")
                     messagebox.showwarning("Image Error", "Could not load donation image.")
             
+            # Determine donor name (prioritize username)
+            donor_name = (
+                donation_result.get('username') or 
+                donation_result.get('donor_name') or 
+                donation_result.get('name') or 
+                'Anonymous'
+            )
+            
             # Donation Details
             details = [
                 ("Title", title),
                 ("Category", category),
-                ("Condition", condition),
-                ("Location", location),
+                ("Condition", donation_result.get('condition', 'N/A')),
+                ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
                 ("Donor Name", donor_name),
-                ("Donation ID", matching_donation.get('unique_id', 'N/A')),
-                ("Description", matching_donation.get('description', 'N/A')),
-                ("Status", matching_donation.get('status', 'N/A')),
-                ("Created At", str(matching_donation.get('created_at', 'N/A'))),
-                ("Donor Email", matching_donation.get('donor_email', 'N/A'))
+                ("Donation ID", unique_id),
+                ("Description", description),
+                ("Status", status),
+                ("Created At", str(donation_result.get('created_at', 'N/A'))),
+                ("Donor Email", donation_result.get('donor_email', 'N/A'))
             ]
             
             # Display details in right frame
@@ -405,7 +391,7 @@ class DonationListPage:
                 value_label.pack(side='left', anchor='w')
             
             # Associated Requests Section
-            requests = matching_donation.get('associated_requests', [])
+            requests = donation_result.get('associated_requests', [])
             if requests:
                 # Add a separator
                 ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=10)
@@ -433,7 +419,7 @@ class DonationListPage:
             action_frame.pack(fill='x', pady=10, padx=20)
             
             # Store donation ID for button actions
-            donation_id = matching_donation.get('unique_id')
+            donation_id = unique_id
             
             # Contact Donor Button
             contact_btn = ttk.Button(
@@ -462,7 +448,171 @@ class DonationListPage:
         except Exception as e:
             print(f"Error creating donation details window: {e}")
             messagebox.showerror("Error", f"Could not display donation details: {e}")
-    
+
+    def view_donation_details(self, event=None):
+        """
+        View donation details on double-click or button press
+        Handles both treeview events and button clicks
+        """
+        # Determine the selected item
+        if event:
+            # Double-click event
+            selected_item = self.donations_tree.identify_row(event.y)
+            if not selected_item:
+                return
+        else:
+            # Button click
+            selected_item = self.donations_tree.selection()
+            if not selected_item:
+                messagebox.showwarning("Selection Error", "Please select a donation to view details.")
+                return
+            selected_item = selected_item[0]
+        
+        # Get donation details from the selected row
+        donation_details = self.donations_tree.item(selected_item, 'values')
+        
+        if not donation_details or len(donation_details) < 5:
+            messagebox.showerror("Invalid Selection", "Unable to retrieve donation details.")
+            return
+        
+        # Extract details based on treeview columns
+        unique_id = donation_details[0]
+        title = donation_details[1]
+        category = donation_details[2]
+        description = donation_details[3]
+        status = donation_details[4]
+        
+        # Open donation details view
+        try:
+            # Fetch specific donation details
+            donation_result = self.db.get_donation_details(unique_id)
+            
+            if not donation_result:
+                messagebox.showerror("Error", f"Could not find details for donation: {title}")
+                return
+            
+            # Create a details window
+            details_window = tk.Toplevel(self.frame)
+            details_window.title(f"Donation Details - {title}")
+            details_window.geometry("800x600")
+            
+            # Main container
+            main_frame = ttk.Frame(details_window, padding="20 20 20 20")
+            main_frame.pack(fill='both', expand=True)
+            
+            # Create two columns
+            left_frame = ttk.Frame(main_frame)
+            left_frame.pack(side='left', fill='both', expand=True, padx=10)
+            
+            right_frame = ttk.Frame(main_frame)
+            right_frame.pack(side='right', fill='both', expand=True, padx=10)
+            
+            # Donation Image
+            image_path = donation_result.get('image_path')
+            if image_path and os.path.exists(image_path):
+                try:
+                    original_image = Image.open(image_path)
+                    resized_image = original_image.resize((400, 400), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(resized_image)
+                    
+                    # Display image
+                    image_label = ttk.Label(left_frame, image=photo)
+                    image_label.image = photo  # Keep a reference
+                    image_label.pack(pady=20)
+                except Exception as img_err:
+                    print(f"Error loading image: {img_err}")
+                    messagebox.showwarning("Image Error", "Could not load donation image.")
+            
+            # Donation Details
+            details = [
+                ("Title", title),
+                ("Category", category),
+                ("Condition", donation_result.get('condition', 'N/A')),
+                ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
+                ("Donor Name", donation_result.get('donor_name', 'N/A')),
+                ("Donation ID", unique_id),
+                ("Description", description),
+                ("Status", status),
+                ("Created At", str(donation_result.get('created_at', 'N/A'))),
+                ("Donor Email", donation_result.get('donor_email', 'N/A'))
+            ]
+            
+            # Display details in right frame
+            for label_text, value in details:
+                detail_frame = ttk.Frame(right_frame)
+                detail_frame.pack(fill='x', pady=5)
+                
+                label = ttk.Label(detail_frame, text=f"{label_text}:", font=('Segoe UI', 10, 'bold'), width=15)
+                label.pack(side='left', anchor='w')
+                
+                value_label = ttk.Label(
+                    detail_frame, 
+                    text=value, 
+                    font=('Segoe UI', 10), 
+                    wraplength=300,
+                    justify='left'
+                )
+                value_label.pack(side='left', anchor='w')
+            
+            # Associated Requests Section
+            requests = donation_result.get('associated_requests', [])
+            if requests:
+                # Add a separator
+                ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=10)
+                
+                # Requests header
+                requests_header = ttk.Label(right_frame, text="Associated Requests", font=('Segoe UI', 12, 'bold'))
+                requests_header.pack(pady=5)
+                
+                # Display requests
+                for request in requests:
+                    request_frame = ttk.Frame(right_frame)
+                    request_frame.pack(fill='x', pady=3)
+                    
+                    request_label = ttk.Label(
+                        request_frame, 
+                        text=f"Request ID: {request.get('request_id', 'N/A')} | "
+                             f"Requester: {request.get('requester_name', 'N/A')} | "
+                             f"Status: {request.get('request_status', 'N/A')}", 
+                        font=('Segoe UI', 10)
+                    )
+                    request_label.pack(side='left')
+            
+            # Action buttons frame
+            action_frame = ttk.Frame(details_window)
+            action_frame.pack(fill='x', pady=10, padx=20)
+            
+            # Store donation ID for button actions
+            donation_id = unique_id
+            
+            # Contact Donor Button
+            contact_btn = ttk.Button(
+                action_frame, 
+                text="Contact Donor", 
+                command=lambda: self._contact_donor_from_details(donation_id)
+            )
+            contact_btn.pack(side='left', padx=5)
+            
+            # Request Donation Button
+            request_btn = ttk.Button(
+                action_frame, 
+                text="Request Donation", 
+                command=lambda: self._request_donation_from_details(donation_id)
+            )
+            request_btn.pack(side='left', padx=5)
+            
+            # Close Button
+            close_btn = ttk.Button(
+                action_frame, 
+                text="Close", 
+                command=details_window.destroy
+            )
+            close_btn.pack(side='right', padx=5)
+        
+        except Exception as e:
+            print(f"Error creating donation details window: {e}")
+            messagebox.showerror("Error", f"Could not display donation details: {e}")
+
     def _contact_donor_from_details(self, donation_id):
         """
         Contact donor from donation details view
@@ -544,10 +694,7 @@ I am interested in the donation: {donation.get('title', 'Untitled Donation')}.
 Category: {donation.get('category', 'N/A')}
 Condition: {donation.get('condition', 'N/A')}
 
-Could you provide more information about this donation?
-
-Best regards,
-{self.user_info.get('name', 'Potential Recipient')}"""
+Could you provide more information about this donation?"""
             
             # Use simpledialog to allow user to edit message
             message = simpledialog.askstring(
@@ -651,7 +798,7 @@ Best regards,
                 else:
                     messagebox.showerror(
                         "Request Error", 
-                        "Failed to create request. Please try again."
+                        f"Failed to create request. Please try again."
                     )
             
             except Exception as request_err:
@@ -692,28 +839,18 @@ Best regards,
             return
         
         # Extract details based on treeview columns
-        title = donation_details[0]
-        category = donation_details[1]
-        condition = donation_details[2]
-        location = donation_details[3]
-        donor_name = donation_details[4]
+        unique_id = donation_details[0]
+        title = donation_details[1]
+        category = donation_details[2]
+        description = donation_details[3]
+        status = donation_details[4]
         
         # Open donation details view
         try:
-            # Fetch all donations to find the matching one
-            donations = self.db.search_donations()
+            # Fetch specific donation details
+            donation_result = self.db.get_donation_details(unique_id)
             
-            # Find the matching donation
-            matching_donation = next(
-                (donation for donation in donations 
-                 if (donation.get('title') == title and 
-                     donation.get('category') == category and 
-                     donation.get('condition') == condition and 
-                     donation.get('donor_name') == donor_name)),
-                None
-            )
-            
-            if not matching_donation:
+            if not donation_result:
                 messagebox.showerror("Error", f"Could not find details for donation: {title}")
                 return
             
@@ -734,7 +871,7 @@ Best regards,
             right_frame.pack(side='right', fill='both', expand=True, padx=10)
             
             # Donation Image
-            image_path = matching_donation.get('image_path')
+            image_path = donation_result.get('image_path')
             if image_path and os.path.exists(image_path):
                 try:
                     original_image = Image.open(image_path)
@@ -753,14 +890,14 @@ Best regards,
             details = [
                 ("Title", title),
                 ("Category", category),
-                ("Condition", condition),
-                ("Location", location),
-                ("Donor Name", donor_name),
-                ("Donation ID", matching_donation.get('unique_id', 'N/A')),
-                ("Description", matching_donation.get('description', 'N/A')),
-                ("Status", matching_donation.get('status', 'N/A')),
-                ("Created At", str(matching_donation.get('created_at', 'N/A'))),
-                ("Donor Email", matching_donation.get('donor_email', 'N/A'))
+                ("Condition", donation_result.get('condition', 'N/A')),
+                ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
+                ("Donor Name", donation_result.get('donor_name', 'N/A')),
+                ("Donation ID", unique_id),
+                ("Description", description),
+                ("Status", status),
+                ("Created At", str(donation_result.get('created_at', 'N/A'))),
+                ("Donor Email", donation_result.get('donor_email', 'N/A'))
             ]
             
             # Display details in right frame
@@ -781,7 +918,7 @@ Best regards,
                 value_label.pack(side='left', anchor='w')
             
             # Associated Requests Section
-            requests = matching_donation.get('associated_requests', [])
+            requests = donation_result.get('associated_requests', [])
             if requests:
                 # Add a separator
                 ttk.Separator(right_frame, orient='horizontal').pack(fill='x', pady=10)
@@ -809,7 +946,7 @@ Best regards,
             action_frame.pack(fill='x', pady=10, padx=20)
             
             # Store donation ID for button actions
-            donation_id = matching_donation.get('unique_id')
+            donation_id = unique_id
             
             # Contact Donor Button
             contact_btn = ttk.Button(
@@ -838,7 +975,7 @@ Best regards,
         except Exception as e:
             print(f"Error creating donation details window: {e}")
             messagebox.showerror("Error", f"Could not display donation details: {e}")
-    
+
     def contact_donor(self):
         """
         Contact the donor of a selected donation
@@ -888,7 +1025,7 @@ Best regards,
             
             # Open email composition dialog
             subject = f"Inquiry about Donation: {donation.get('title', 'Untitled Donation')}"
-            default_message = f"Hello {donor_name},\n\nI am interested in the donation: {donation.get('title', 'Untitled Donation')}.\n\nCould you provide more information?\n\nBest regards,\n{self.user_info.get('name', 'Potential Recipient')}"
+            default_message = f"Hello {donor_name},\n\nI am interested in the donation: {donation.get('title', 'Untitled Donation')}.\n\nCould you provide more information?"
             
             # Use simpledialog to allow user to edit message
             message = simpledialog.askstring(
@@ -1112,14 +1249,13 @@ Best regards,
                 # Extract relevant details
                 title = donation.get('title', 'Untitled')
                 category = donation.get('category', 'N/A')
-                condition = donation.get('condition', 'N/A')
-                donor_name = donation.get('donor_name', 'Anonymous')
+                description = donation.get('description', 'N/A')
                 status = donation.get('status', 'unknown')
                 
                 # Only add if status is available
                 if status.lower() == 'available':
                     self.donations_tree.insert('', 'end', values=(
-                        title, category, condition, donor_name
+                        title, category, description, status
                     ), tags=(status,))
             
             except Exception as insert_err:

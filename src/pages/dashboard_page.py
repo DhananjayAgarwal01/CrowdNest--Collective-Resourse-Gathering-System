@@ -78,20 +78,40 @@ class DashboardPage:
         quick_actions = [
             ("Donations", "DonationListPage", '🎁'),
             ("Request", "RequestListPage", '📦'),
-            ("My Profile", "ProfilePage", '👤')
+            ("My Profile", "ProfilePage", '👤'),
+            ("Logout", "LoginPage", '🚪')
         ]
         
         for text, target, icon in quick_actions:
             if self.show_frame is not None:
-                btn = ModernUI.create_button(
-                    buttons_frame,
-                    f"{icon} {text}",
-                    lambda t=target: self.show_frame(t),
-                    width=20
-                )
+                if text == "Logout":
+                    btn = ModernUI.create_button(
+                        buttons_frame,
+                        f"{icon} {text}",
+                        lambda: self._handle_logout(),
+                        width=20
+                    )
+                else:
+                    btn = ModernUI.create_button(
+                        buttons_frame,
+                        f"{icon} {text}",
+                        lambda t=target: self.show_frame(t),
+                        width=20
+                    )
                 btn.pack(side='left', padx=5)
             else:
                 print(f"Warning: show_frame callback not set for {text}")
+
+    def _handle_logout(self):
+        """Handle logout action"""
+        # Clear current user data
+        self.current_user = None
+        # Reset welcome label
+        if self.welcome_label:
+            self.welcome_label.configure(text="")
+        # Navigate to login page
+        if self.show_frame:
+            self.show_frame('LoginPage')
 
         # Notifications section
         notifications_container = ttk.Frame(scrollable_frame, style='Card.TFrame')
