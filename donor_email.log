@@ -10,3 +10,7 @@
 2025-03-30 23:41:28,115 - INFO - Attempting to send email to cyteop@gmail.com
 2025-03-30 23:41:28,115 - INFO - Sender: Dhananjay, Subject: Inquiry about Donation: Table
 2025-03-30 23:41:32,030 - INFO - Email sent successfully to cyteop@gmail.com
+2025-04-01 22:26:35,483 - INFO - Fetching sender information for ID: ad8eb7d0-f379-4191-9c3f-6d48682f2a81
+2025-04-01 22:26:35,483 - INFO - Attempting to send email to Dhananjay.ag007@gmail.com
+2025-04-01 22:26:35,483 - INFO - Sender: Dhananjay1, Subject: Inquiry about Donation: Printer
+2025-04-01 22:26:39,208 - INFO - Email sent successfully to Dhananjay.ag007@gmail.com

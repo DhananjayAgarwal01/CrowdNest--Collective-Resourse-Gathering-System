@@ -93,28 +93,8 @@ def create_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
         print("Donations table created or already exists.")
-        
-        # Requests table with enhanced schema
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS requests (
-            unique_id VARCHAR(36) PRIMARY KEY,
-            requester_id VARCHAR(36) NOT NULL,
-            title VARCHAR(255) NOT NULL,
-            description TEXT NOT NULL,
-            category VARCHAR(50) NOT NULL,
-            state VARCHAR(50) NOT NULL,
-            city VARCHAR(50) NOT NULL,
-            status ENUM('open', 'fulfilled', 'closed') DEFAULT 'open',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (requester_id) REFERENCES users(unique_id) ON DELETE CASCADE,
-            INDEX idx_status (status),
-            INDEX idx_category (category),
-            INDEX idx_location (state, city),
-            FULLTEXT INDEX idx_search (title, description)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """)
-        print("Requests table created or already exists.")
+
+        # Removed requests table creation
 
         # Donation Requests table
         cursor.execute("""

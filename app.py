@@ -149,7 +149,7 @@ class CrowdNestApp:
                 
                 # Initialize frames with authenticated user info
                 if self.login_success(user_info):
-                    # Show dashboard only after successful initialization
+                    # Explicitly show only the dashboard
                     self.show_frame('DashboardPage')
                 else:
                     messagebox.showerror("Login Error", "Failed to initialize user session")
@@ -230,16 +230,11 @@ class CrowdNestApp:
             
             # Reset frames to initial state
             self.frames = {name: frame for name, frame in self.frames.items()
-                          if name in ['LoginPage', 'RegisterPage']}
+                           if name in ['LoginPage', 'RegisterPage']}
             
-            # Hide navigation pane before showing login page
+            # Ensure navigation pane remains visible
             if hasattr(self, 'nav_pane'):
-                self.nav_pane.pack_forget()
-            
-            # Show login page
-            self.show_frame('LoginPage')
-            
-            messagebox.showinfo("Logout", "You have been logged out successfully!")
+                self.nav_pane.pack(side='left', fill='y')
             
         except Exception as e:
             print(f"Error in logout: {e}")
@@ -278,9 +273,6 @@ class CrowdNestApp:
             
             # Update navigation pane
             self.nav_pane.update_user_info(user_info)
-            
-            # Show dashboard page after successful login
-            self.show_frame('DashboardPage')
             
             return True
             

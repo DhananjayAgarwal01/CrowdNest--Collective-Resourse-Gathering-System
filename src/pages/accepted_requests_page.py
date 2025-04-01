@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import sys
 import os
+import traceback
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -196,6 +197,10 @@ class AcceptedRequestsPage:
             # Attempt to retrieve request details
             request_details = db_handler.get_request_details_by_message(request_id)
             
+            # Print all keys for debugging
+            print("Request Details Keys:", request_details.keys())
+            print("Full Request Details:", request_details)
+            
             # Check if details were retrieved successfully
             if not request_details:
                 messagebox.showerror(
@@ -225,10 +230,7 @@ class AcceptedRequestsPage:
                     'title': 'Donation Information',
                     'details': [
                         ("Title", safe_get(request_details, 'donation_title')),
-                        ("Description", safe_get(request_details, 'donation_description')),
-                        ("Category", safe_get(request_details, 'donation_category')),
-                        ("Condition", safe_get(request_details, 'donation_condition')),
-                        ("Location", f"{safe_get(request_details, 'donation_city')}, {safe_get(request_details, 'donation_state')}")
+                        ("Description", safe_get(request_details, 'donation_description'))
                     ]
                 },
                 # Donor Details Section
@@ -244,9 +246,7 @@ class AcceptedRequestsPage:
                     'title': 'Request Details',
                     'details': [
                         ("Request Message", safe_get(request_details, 'request_message')),
-                        ("Status", safe_get(request_details, 'request_status')),
-                        ("Created At", safe_get(request_details, 'request_created_at')),
-                        ("Updated At", safe_get(request_details, 'request_updated_at'))
+                        ("Status", safe_get(request_details, 'status'))
                     ]
                 },
                 # Requester Details Section
@@ -395,7 +395,7 @@ class AcceptedRequestsPage:
                 "Error", 
                 f"An unexpected error occurred: {str(e)}"
             )
-            print(f"Error marking request delivered: {traceback.format_exc()}")
+            print(f"Error marking request delivered: {e}")
     
     def get_frame(self):
         """Return the main frame for this page"""

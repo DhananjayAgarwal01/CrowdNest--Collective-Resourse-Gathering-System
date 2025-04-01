@@ -77,7 +77,6 @@ class DashboardPage:
         
         quick_actions = [
             ("Donations", "DonationListPage", '🎁'),
-            ("Request", "RequestListPage", '📦'),
             ("My Profile", "ProfilePage", '👤'),
             ("Logout", "LoginPage", '🚪')
         ]
@@ -101,18 +100,7 @@ class DashboardPage:
                 btn.pack(side='left', padx=5)
             else:
                 print(f"Warning: show_frame callback not set for {text}")
-
-    def _handle_logout(self):
-        """Handle logout action"""
-        # Clear current user data
-        self.current_user = None
-        # Reset welcome label
-        if self.welcome_label:
-            self.welcome_label.configure(text="")
-        # Navigate to login page
-        if self.show_frame:
-            self.show_frame('LoginPage')
-
+        
         # Notifications section
         notifications_container = ttk.Frame(scrollable_frame, style='Card.TFrame')
         notifications_container.pack(fill='x', padx=40, pady=20)
@@ -135,6 +123,17 @@ class DashboardPage:
         
         # Maximize window
         self.frame.pack(fill=tk.BOTH, expand=True)  # Ensure frame fills the entire parent
+    
+    def _handle_logout(self):
+        """Handle logout action"""
+        # Clear current user data
+        self.current_user = None
+        # Reset welcome label
+        if self.welcome_label:
+            self.welcome_label.configure(text="")
+        # Navigate to login page
+        if self.show_frame:
+            self.show_frame('LoginPage')
     
     def update_notifications(self):
         """Update the notifications section with recent notifications"""

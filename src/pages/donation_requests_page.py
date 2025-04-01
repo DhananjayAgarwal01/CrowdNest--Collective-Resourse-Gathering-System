@@ -55,7 +55,7 @@ class DonationRequestsPage:
         table_frame.pack(fill='both', expand=True, padx=20, pady=10)
         
         # Columns
-        columns = ('title', 'category', 'requester', 'donor', 'status', 'date')
+        columns = ('unique_id', 'title', 'category', 'requester', 'donor', 'status', 'date')
         self.requests_tree = ttk.Treeview(
             table_frame, 
             columns=columns, 
@@ -172,6 +172,7 @@ class DonationRequestsPage:
             for request in requests:
                 # Safely extract request details
                 self.requests_tree.insert('', 'end', values=(
+                    request.get('unique_id', 'N/A'),
                     request.get('donation_title', 'N/A'),
                     request.get('donation_category', 'N/A'),
                     request.get('requester_name', 'N/A'),
@@ -223,8 +224,7 @@ class DonationRequestsPage:
             # Find the matching request
             matching_request = next(
                 (req for req in requests 
-                 if req.get('donation_title') == selected_values[0] and 
-                    req.get('requester_name') == selected_values[2]), 
+                 if req.get('unique_id') == selected_values[0]), 
                 None
             )
             
@@ -251,12 +251,13 @@ class DonationRequestsPage:
                 self.requests_tree.item(
                     selected_item[0], 
                     values=(
-                        selected_values[0],  # Title
-                        selected_values[1],  # Category
-                        selected_values[2],  # Requester
-                        selected_values[3],  # Donor
+                        selected_values[0],  # Unique ID
+                        selected_values[1],  # Title
+                        selected_values[2],  # Category
+                        selected_values[3],  # Requester
+                        selected_values[4],  # Donor
                         new_status,          # Updated Status
-                        selected_values[5]   # Date
+                        selected_values[6]   # Date
                     )
                 )
                 messagebox.showinfo("Success", message)
@@ -289,8 +290,7 @@ class DonationRequestsPage:
             # Find the matching request
             matching_request = next(
                 (req for req in requests 
-                 if req.get('donation_title') == selected_values[0] and 
-                    req.get('requester_name') == selected_values[2]), 
+                 if req.get('unique_id') == selected_values[0]), 
                 None
             )
             
@@ -361,23 +361,8 @@ class DonationRequestsPage:
         selected_values = self.requests_tree.item(selected_item[0])['values']
         
         try:
-            # Find the request in the database
-            requests = self.db.get_user_donation_requests(self.user_info['unique_id'])
-            
-            # Find the matching request
-            matching_request = next(
-                (req for req in requests 
-                 if req.get('donation_title') == selected_values[0] and 
-                    req.get('requester_name') == selected_values[2]), 
-                None
-            )
-            
-            if not matching_request:
-                messagebox.showerror("Error", "Could not find request to approve.")
-                return
-            
-            # Get the request ID
-            request_id = matching_request.get('unique_id')
+            # Directly use the unique_id from the selected values
+            request_id = selected_values[0]
             
             if not request_id:
                 messagebox.showerror("Error", "Invalid request ID.")
@@ -395,23 +380,25 @@ class DonationRequestsPage:
                 self.requests_tree.item(
                     selected_item[0], 
                     values=(
-                        selected_values[0],  # Title
-                        selected_values[1],  # Category
-                        selected_values[2],  # Requester
-                        selected_values[3],  # Donor
-                        'approved',          # Updated Status
-                        selected_values[5]   # Date
+                        selected_values[0],  # Unique ID
+                        selected_values[1],  # Title
+                        selected_values[2],  # Category
+                        selected_values[3],  # Requester
+                        selected_values[4],  # Donor
+                        'Approved',          # Updated Status
+                        selected_values[6]   # Date
                     )
                 )
-                messagebox.showinfo("Success", message)
+                messagebox.showinfo("Success", "Request approved successfully.")
                 
-                # Refresh the requests to ensure latest data
+                # Refresh the view
                 self.refresh_donation_requests()
             else:
-                messagebox.showerror("Approval Failed", message)
+                messagebox.showerror("Error", message)
         
         except Exception as e:
-            messagebox.showerror("Error", f"Could not approve request: {e}")
+            messagebox.showerror("Error", f"Could not approve request: {str(e)}")
+            print(f"Error in approve_request: {e}")
 
     def reject_request(self):
         """Reject the selected donation request"""
@@ -433,8 +420,7 @@ class DonationRequestsPage:
             # Find the matching request
             matching_request = next(
                 (req for req in requests 
-                 if req.get('donation_title') == selected_values[0] and 
-                    req.get('requester_name') == selected_values[2]), 
+                 if req.get('unique_id') == selected_values[0]), 
                 None
             )
             
@@ -461,12 +447,13 @@ class DonationRequestsPage:
                 self.requests_tree.item(
                     selected_item[0], 
                     values=(
-                        selected_values[0],  # Title
-                        selected_values[1],  # Category
-                        selected_values[2],  # Requester
-                        selected_values[3],  # Donor
-                        'rejected',          # Updated Status
-                        selected_values[5]   # Date
+                        selected_values[0],  # Unique ID
+                        selected_values[1],  # Title
+                        selected_values[2],  # Category
+                        selected_values[3],  # Requester
+                        selected_values[4],  # Donor
+                        'Rejected',          # Updated Status
+                        selected_values[6]   # Date
                     )
                 )
                 messagebox.showinfo("Success", message)

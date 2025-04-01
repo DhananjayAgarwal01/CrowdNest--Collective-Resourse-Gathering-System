@@ -97,7 +97,15 @@ class DatabaseHandler:
             """
             
             # Execute the query
-            self.cursor.execute(query, (unique_id, username, email, hashed_password, location))
+            self.cursor.execute(query, (
+                unique_id,
+                username,
+                email,
+                hashed_password,
+                location
+            ))
+            
+            # Commit the transaction
             self.connection.commit()
             
             return unique_id
@@ -284,170 +292,134 @@ class DatabaseHandler:
         :param request_message_or_id: Request message or unique ID
         :return: Dictionary with detailed request information
         """
+        # Extensive logging of input
+        print("=" * 50)
+        print("GET REQUEST DETAILS DEBUG")
+        print(f"Input type: {type(request_message_or_id)}")
+        print(f"Input value: {request_message_or_id}")
+        print(f"Input str representation: '{str(request_message_or_id)}'")
+        print("=" * 50)
+        
         try:
-            # Log the input for debugging
-            print(f"Attempting to retrieve details for: {request_message_or_id}")
-            
-            # Validate input
+            # Validate and clean input
             if not request_message_or_id:
                 print("Error: Empty request message or ID provided")
                 return None
             
-            # Prepare search patterns
-            id_search_pattern = f"%{request_message_or_id}%"
-            message_search_pattern = f"%{request_message_or_id}%"
+            # Convert to string if not already
+            request_message_or_id = str(request_message_or_id).strip()
             
-            # Comprehensive search query with multiple matching strategies
-            search_query = """
+            # Prepare multiple search queries to increase chances of finding the request
+            search_queries = [
+                # Full detailed query with exact match
+                ("""
+                SELECT 
+                    dr.unique_id, 
+                    dr.requester_id, 
+                    dr.donation_id, 
+                    dr.request_message, 
+                    dr.status,
+                    u.username as requester_username,
+                    u.email as requester_email,
+                    d.title as donation_title,
+                    d.description as donation_description,
+                    d.donor_id,
+                    donor.username as donor_name,
+                    donor.email as donor_email,
+                    dr.created_at
+                FROM donation_requests dr
+                JOIN users u ON dr.requester_id = u.unique_id
+                JOIN donations d ON dr.donation_id = d.unique_id
+                JOIN users donor ON d.donor_id = donor.unique_id
+                WHERE 
+                    dr.unique_id = %s OR 
+                    dr.request_message = %s
+                """, (request_message_or_id, request_message_or_id)),
+                
+                # Simplified query with fewer joins
+                ("""
+                SELECT 
+                    unique_id, 
+                    requester_id, 
+                    donation_id, 
+                    request_message, 
+                    status
+                FROM donation_requests
+                WHERE 
+                    unique_id = %s OR 
+                    request_message = %s
+                """, (request_message_or_id, request_message_or_id)),
+                
+                # Partial match query
+                ("""
+                SELECT 
+                    unique_id, 
+                    requester_id, 
+                    donation_id, 
+                    request_message, 
+                    status
+                FROM donation_requests
+                WHERE 
+                    unique_id LIKE %s OR 
+                    request_message LIKE %s
+                """, (f"%{request_message_or_id}%", f"%{request_message_or_id}%"))
+            ]
+            
+            # Try each query until a result is found
+            for query, params in search_queries:
+                print(f"Executing query: {query}")
+                print(f"With parameters: {params}")
+                
+                self.cursor.execute(query, params)
+                result = self.cursor.fetchone()
+                
+                if result:
+                    # Convert result to dictionary and print for debugging
+                    result_dict = dict(result)
+                    
+                    # Extensive logging
+                    print("=" * 50)
+                    print("REQUEST DETAILS FOUND:")
+                    for key, value in result_dict.items():
+                        print(f"{key}: {value}")
+                    print("=" * 50)
+                    
+                    return result_dict
+            
+            # If no results found, print out all requests for debugging
+            print("=" * 50)
+            print("DEBUGGING: NO MATCHING REQUEST FOUND")
+            print(f"Searched for: {request_message_or_id}")
+            
+            # List all requests
+            list_all_query = """
             SELECT 
-                dr.unique_id, 
-                dr.request_message, 
-                dr.requester_id, 
-                dr.donation_id, 
-                dr.status,
-                d.title as donation_title,
-                u_requester.username as requester_username,
-                u_requester.email as requester_email
-            FROM donation_requests dr
-            LEFT JOIN donations d ON dr.donation_id = d.unique_id
-            LEFT JOIN users u_requester ON dr.requester_id = u_requester.unique_id
-            WHERE 
-                dr.unique_id = %s OR 
-                dr.unique_id LIKE %s OR 
-                dr.request_message LIKE %s
+                unique_id, 
+                request_message, 
+                donation_id, 
+                status,
+                requester_id
+            FROM donation_requests
             """
+            self.cursor.execute(list_all_query)
+            all_requests = self.cursor.fetchall()
             
-            # Execute search with multiple patterns
-            self.cursor.execute(
-                search_query, 
-                (request_message_or_id, id_search_pattern, message_search_pattern)
-            )
-            request_record = self.cursor.fetchone()
+            print("ALL DONATION REQUESTS:")
+            for req in all_requests:
+                print(req)
+            print("=" * 50)
             
-            # If no request found, perform extensive diagnostics
-            if not request_record:
-                print(f"No request found with ID/message: {request_message_or_id}")
-                
-                # Diagnostic queries to understand the database state
-                print("\nDiagnostic Information:")
-                
-                # Check total number of records in donation_requests
-                self.cursor.execute("SELECT COUNT(*) as total_requests FROM donation_requests")
-                total_requests = self.cursor.fetchone()['total_requests']
-                print(f"Total donation requests: {total_requests}")
-                
-                # List first 10 request IDs
-                self.cursor.execute("""
-                    SELECT unique_id, request_message 
-                    FROM donation_requests 
-                    LIMIT 10
-                """)
-                existing_requests = self.cursor.fetchall()
-                
-                print("First 10 Request IDs and Messages:")
-                for req in existing_requests:
-                    print(f"ID: {req['unique_id']}, Message: {req['request_message']}")
-                
-                # Check for similar requests
-                self.cursor.execute("""
-                    SELECT unique_id, request_message 
-                    FROM donation_requests 
-                    WHERE request_message LIKE %s OR unique_id LIKE %s
-                    LIMIT 5
-                """, (message_search_pattern, id_search_pattern))
-                similar_requests = self.cursor.fetchall()
-                
-                if similar_requests:
-                    print("\nSimilar Requests Found:")
-                    for req in similar_requests:
-                        print(f"ID: {req['unique_id']}, Message: {req['request_message']}")
-                
-                return None
-            
-            # Fetch full details for the matched request
-            full_query = """
-            SELECT 
-                dr.*,
-                u_requester.unique_id as requester_unique_id,
-                u_requester.username as requester_username,
-                u_requester.email as requester_email,
-                
-                d.unique_id as donation_unique_id,
-                d.title as donation_title,
-                d.description as donation_description,
-                d.category as donation_category,
-                d.condition as donation_condition,
-                d.state as donation_state,
-                d.city as donation_city, 
-                
-                u_donor.username as donor_name,
-                u_donor.email as donor_email
-            FROM 
-                donation_requests dr
-            LEFT JOIN 
-                users u_requester ON dr.requester_id = u_requester.unique_id
-            LEFT JOIN 
-                donations d ON dr.donation_id = d.unique_id
-            LEFT JOIN 
-                users u_donor ON d.donor_id = u_donor.unique_id
-            WHERE 
-                dr.unique_id = %s
-            """
-            
-            # Execute full details query
-            self.cursor.execute(full_query, (request_record['unique_id'],))
-            result = self.cursor.fetchone()
-            
-            # If no result found after detailed query, log diagnostics
-            if not result:
-                print(f"Detailed query failed for request ID: {request_record['unique_id']}")
-                return None
-            
-            # Convert to dictionary with comprehensive details
-            request_details = {
-                # Request Details
-                'request_unique_id': result.get('unique_id'),
-                'request_message': result.get('request_message'),
-                'request_status': result.get('status', 'N/A').capitalize(),
-                'request_created_at': result.get('created_at'),
-                'request_updated_at': result.get('updated_at'),
-                
-                # Requester Details
-                'requester_id': result.get('requester_unique_id'),
-                'requester_username': result.get('requester_username'),
-                'requester_email': result.get('requester_email'),
-                
-                # Donation Details
-                'donation_id': result.get('donation_unique_id'),
-                'donation_title': result.get('donation_title'),
-                'donation_description': result.get('donation_description'),
-                'donation_category': result.get('donation_category'),
-                'donation_condition': result.get('donation_condition'),
-                'donation_state': result.get('donation_state'),
-                'donation_city': result.get('donation_city'),
-                
-                # Donor Details
-                'donor_name': result.get('donor_name'),
-                'donor_email': result.get('donor_email')
-            }
-            
-            # Log successful retrieval
-            print(f"Successfully retrieved details for request: {request_details['request_unique_id']}")
-            
-            return request_details
+            return None
         
         except mysql.connector.Error as e:
-            print(f"MySQL Error retrieving request details: {e}")
-            # Log additional error details
-            print(f"Error Code: {e.errno}")
-            print(f"SQL State: {e.sqlstate}")
-            print(f"Error Message: {e.msg}")
+            print(f"Database error retrieving request details: {e}")
             return None
         except Exception as e:
             print(f"Unexpected error retrieving request details: {e}")
-            print(traceback.format_exc())
+            import traceback
+            traceback.print_exc()
             return None
-
+    
     def get_request_details(self, request_id):
         """
         Retrieve details about a specific request using its unique ID
@@ -676,6 +648,56 @@ class DatabaseHandler:
             # Commit the transaction
             self.connection.commit()
             
+            # Debugging: Print full donation details
+            print("Donation Creation Debug:")
+            print(f"Unique ID: {unique_id}")
+            print(f"Donor ID: {donor_id}")
+            print(f"Title: {title}")
+            print(f"Description: {description}")
+            print(f"Category: {category}")
+            print(f"Condition: {condition}")
+            print(f"State: {state}")
+            print(f"City: {city}")
+            print(f"Status: {status}")
+            print(f"Donor Email: {donor_email}")
+            print(f"Donor Username: {donor_username}")
+            
+            # Perform direct database check after insertion
+            direct_check_query = """
+            SELECT 
+                unique_id, donor_id, title, description, category, 
+                `condition`, state, city, status 
+            FROM donations 
+            WHERE unique_id = %s
+            """
+            
+            # Execute direct check
+            self.cursor.execute(direct_check_query, (unique_id,))
+            direct_check_result = self.cursor.fetchone()
+            
+            print("\nDirect Database Check:")
+            if direct_check_result:
+                print("Donation found in database immediately after insertion:")
+                for key, value in direct_check_result.items():
+                    print(f"{key}: {value}")
+            else:
+                print(f"WARNING: No donation found with ID {unique_id} immediately after insertion!")
+            
+            # List all donations to help diagnose
+            try:
+                self.cursor.execute("SELECT unique_id, title, donor_id FROM donations")
+                all_donations = self.cursor.fetchall()
+                print("\nRefresh method called. Donations found:", len(all_donations))
+                for donation in all_donations:
+                    print(f"Donation ID: {donation['unique_id']}, Title: {donation['title']}, Donor ID: {donation['donor_id']}")
+                
+                # Specific check for the newly created donation
+                specific_check = self.get_donation_by_id(unique_id)
+                if not specific_check:
+                    print(f"No donation found with ID {unique_id}")
+            except Exception as list_error:
+                print(f"Error listing donations: {list_error}")
+            
             # Prepare donation dictionary
             donation_data = {
                 'unique_id': unique_id,
@@ -691,6 +713,15 @@ class DatabaseHandler:
                 'status': status,
                 'image_type': image_type
             }
+            
+            # Trigger UI update for donations list if possible
+            try:
+                # Attempt to find and call a method to refresh donations list
+                from src.pages.donation_list_page import DonationListPage
+                for instance in DonationListPage.instances:
+                    instance.refresh_donations([donation_data])
+            except Exception as e:
+                print(f"Could not automatically refresh donations list: {e}")
             
             return True, f"Donation '{title}' created successfully with ID {unique_id}", donation_data
         
@@ -1756,23 +1787,19 @@ Please review the request."""
                         return False, "Failed to update request or donation status"
                     
                     # Send email notification
-                    from src.utils.email_sender import send_email
-                    from src.utils.html_email_templates import HTMLEmailTemplates
-                    
-                    # Prepare email content
-                    email_subject = f"Donation Request Approved: {request_info['donation_title']}"
-                    email_body = HTMLEmailTemplates.generate_request_status_email(
-                        status='approved', 
-                        request_details=request_info
-                    )
-                    
-                    # Send email to requester
-                    send_email(
-                        to_email=request_info['requester_email'], 
-                        subject=email_subject, 
-                        body=email_body,
-                        from_name=request_info['donor_username']
-                    )
+                    try:
+                        email_notifier = EmailNotification()
+                        email_notifier.send_status_notification(
+                            recipient_email=request_info['requester_email'], 
+                            status='approved', 
+                            request_details={
+                                'donation_title': request_info['donation_title'],
+                                'requester_username': request_info['requester_username'],
+                                'request_message': request_info['request_message']
+                            }
+                        )
+                    except Exception as email_error:
+                        print(f"Warning: Failed to send email notification: {email_error}")
                     
                     # Commit transaction
                     self.connection.commit()
@@ -1816,23 +1843,19 @@ Please review the request."""
                         return False, "Failed to update request status"
                     
                     # Send email notification
-                    from src.utils.email_sender import send_email
-                    from src.utils.html_email_templates import HTMLEmailTemplates
-                    
-                    # Prepare email content
-                    email_subject = f"Donation Request Rejected: {request_info['donation_title']}"
-                    email_body = HTMLEmailTemplates.generate_request_status_email(
-                        status='rejected', 
-                        request_details=request_info
-                    )
-                    
-                    # Send email to requester
-                    send_email(
-                        to_email=request_info['requester_email'], 
-                        subject=email_subject, 
-                        body=email_body,
-                        from_name=request_info['donor_username']
-                    )
+                    try:
+                        email_notifier = EmailNotification()
+                        email_notifier.send_status_notification(
+                            recipient_email=request_info['requester_email'], 
+                            status='rejected', 
+                            request_details={
+                                'donation_title': request_info['donation_title'],
+                                'requester_username': request_info['requester_username'],
+                                'request_message': request_info['request_message']
+                            }
+                        )
+                    except Exception as email_error:
+                        print(f"Warning: Failed to send email notification: {email_error}")
                     
                     # Commit transaction
                     self.connection.commit()
@@ -2321,9 +2344,9 @@ Thank you for your generosity!"""
             # Combine conditions
             where_clause = " AND ".join(conditions)
 
-            # Donations query
+            # Donations query with DISTINCT to prevent duplicates
             donations_query = f"""
-            SELECT 
+            SELECT DISTINCT
                 d.unique_id,
                 d.title,
                 d.description,
@@ -2352,7 +2375,7 @@ Thank you for your generosity!"""
 
             # Count query
             count_query = f"""
-            SELECT COUNT(*) as total_count
+            SELECT COUNT(DISTINCT d.unique_id) as total_count
             FROM donations d
             JOIN users u ON d.donor_id = u.unique_id
             WHERE {where_clause}
@@ -2483,6 +2506,13 @@ Thank you for your generosity!"""
             import traceback
             traceback.print_exc()
             return False, f"Unexpected error: {str(e)}"
+        
+        finally:
+            # Ensure cursor is reset
+            try:
+                self.reset_cursor()
+            except Exception as reset_err:
+                print(f"Error resetting cursor: {reset_err}")
 
     def create_request(self, requester_id, donation_id, request_message):
         """
@@ -2527,9 +2557,16 @@ Thank you for your generosity!"""
             
             # Prepare the request insertion query
             insert_request_query = """
-            INSERT INTO donation_requests 
-            (unique_id, requester_id, donation_id, request_message, status, created_at) 
-            VALUES (%s, %s, %s, %s, 'pending', NOW())
+            INSERT INTO donation_requests (
+                unique_id, 
+                requester_id, 
+                donation_id, 
+                request_message, 
+                status, 
+                created_at
+            ) VALUES (
+                %s, %s, %s, %s, 'pending', NOW()
+            )
             """
             
             # Execute the query
@@ -2784,7 +2821,7 @@ Thank you for your generosity!"""
             
             # Calculate offset for pagination
             offset = (page - 1) * per_page
-            
+
             # Query to get total count of requests
             count_query = """
             SELECT COUNT(*) as total_requests
@@ -2884,12 +2921,8 @@ Thank you for your generosity!"""
                 
                 d.unique_id AS donation_unique_id,
                 d.title AS donation_title,
-                d.description AS donation_description,
                 d.category AS donation_category,
-                d.`condition` AS donation_condition,
-                d.state AS donation_state,
-                d.city AS donation_city,
-                
+                d.description AS donation_description,
                 u_requester.username AS requester_username,
                 u_requester.email AS requester_email,
                 
@@ -2962,3 +2995,90 @@ Thank you for your generosity!"""
                 self.reset_cursor()
             except Exception as reset_err:
                 print(f"Error resetting cursor: {reset_err}")
+
+    def get_donation_by_id(self, donation_id):
+        """
+        Retrieve a donation by its unique ID
+        
+        :param donation_id: Unique ID of the donation
+        :return: Dictionary with donation details or None
+        """
+        try:
+            # Extensive logging before query
+            print("=" * 50)
+            print("GET DONATION BY ID DEBUG")
+            print(f"Input donation_id type: {type(donation_id)}")
+            print(f"Input donation_id value: '{donation_id}'")
+            print(f"Input donation_id str representation: '{str(donation_id)}'")
+            
+            # Validate input
+            if not donation_id:
+                print("Error: Empty donation ID provided")
+                return None
+            
+            # Ensure donation_id is a string
+            donation_id = str(donation_id).strip()
+            
+            # Prepare the query to get full donation details
+            query = """
+            SELECT 
+                d.unique_id, 
+                d.donor_id, 
+                d.title, 
+                d.description, 
+                d.category, 
+                d.condition, 
+                d.state, 
+                d.city, 
+                d.status,
+                u.username as donor_username,
+                u.email as donor_email
+            FROM donations d
+            JOIN users u ON d.donor_id = u.unique_id
+            WHERE d.unique_id = %s
+            """
+            
+            # Print the exact query being executed
+            print(f"Executing query with ID: '{donation_id}'")
+            
+            # Execute the query
+            self.cursor.execute(query, (donation_id,))
+            
+            # Fetch the donation
+            donation = self.cursor.fetchone()
+            
+            # Log raw database result
+            print("Raw database result:")
+            print(donation)
+            
+            if donation:
+                # Convert to dictionary and add debugging
+                donation_dict = dict(donation)
+                
+                # Debugging print
+                print("Donation Found Debug:")
+                for key, value in donation_dict.items():
+                    print(f"{key}: {value}")
+                
+                return donation_dict
+            
+            # If no donation found, print comprehensive debug message
+            print(f"No donation found with ID '{donation_id}'")
+            
+            # Additional diagnostic query to check all donation IDs
+            print("\nChecking all donation IDs:")
+            self.cursor.execute("SELECT unique_id FROM donations")
+            all_ids = self.cursor.fetchall()
+            print("Existing donation IDs:")
+            for id_row in all_ids:
+                print(f"  {id_row['unique_id']}")
+            
+            print("=" * 50)
+            return None
+        
+        except mysql.connector.Error as e:
+            print(f"MySQL Error retrieving donation: {e}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error retrieving donation: {e}")
+            return None

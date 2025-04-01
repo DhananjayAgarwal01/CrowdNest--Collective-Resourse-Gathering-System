@@ -137,11 +137,11 @@ class ProfilePage:
             query = """
             SELECT u.*, 
                    COUNT(DISTINCT d.unique_id) as total_donations,
-                   COUNT(DISTINCT r.unique_id) as total_requests,
+                   COUNT(DISTINCT dr.unique_id) as total_requests,
                    DATE_FORMAT(u.created_at, '%Y-%m-%d') as member_since
             FROM users u
             LEFT JOIN donations d ON u.unique_id = d.donor_id
-            LEFT JOIN requests r ON u.unique_id = r.requester_id
+            LEFT JOIN donation_requests dr ON u.unique_id = dr.requester_id
             WHERE u.unique_id = %s
             GROUP BY u.unique_id
             """

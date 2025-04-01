@@ -2,16 +2,21 @@ from tkinter import ttk, messagebox, simpledialog, StringVar as tkStringVar
 import tkinter as tk
 from src.ui.modern_ui import ModernUI
 from src.utils.email_validator import EmailValidator
-from src.constants import COLORS, CATEGORIES, CONDITIONS, LOCATIONS, STATES
+from src.constants import COLORS, CATEGORIES, CONDITIONS, STATES
 from src.database.database_handler import DatabaseHandler
 import os
-from PIL import Image, ImageTk
 import io
-from src.utils.email_validator import EmailValidator
+from PIL import Image, ImageTk
 
 class DonationListPage:
+    # Track all instances of DonationListPage
+    instances = []
+
     def __init__(self, parent, user_info, show_frame_callback):
         """Initialize the donation list page"""
+        # Add this instance to the list of instances
+        self.__class__.instances.append(self)
+        
         self.parent = parent
         self.user_info = user_info
         self.show_frame = show_frame_callback
@@ -111,8 +116,8 @@ class DonationListPage:
                 'ID', 
                 'Title', 
                 'Category', 
-                'Description', 
-                'Status'
+                'Description',
+                'Donor'
             ), 
             show='headings'
         )
@@ -189,30 +194,48 @@ class DonationListPage:
         
         :param donations: Optional list of donations to load. 
                           If None, fetches donations from database.
+                          Can be a single donation dictionary or a list.
         """
-        # Clear existing items
-        for i in self.donations_tree.get_children():
-            self.donations_tree.delete(i)
+        try:
+            # Set manual refresh flag
+            self._is_manual_refresh = True
+            
+            # Clear existing items if fetching from database
+            if donations is None:
+                for i in self.donations_tree.get_children():
+                    self.donations_tree.delete(i)
+            
+            # Normalize donations to a list
+            if donations is None:
+                donations_result = self.db.search_donations()
+                donations = donations_result.get('donations', [])
+            elif isinstance(donations, dict):
+                # If a single donation dictionary is passed
+                donations = [donations]
+            
+            # Print debug information
+            print(f"Refresh method called. Donations found: {len(donations)}")
+            
+            # Check if donations list is empty
+            if not donations:
+                messagebox.showinfo("No Donations", "No available donations found.")
+                return
+            
+            # Update treeview with donation information
+            for donation in donations:
+                # Ensure the donation is available
+                if donation.get('status', '').lower() == 'available':
+                    self.donations_tree.insert('', 'end', values=(
+                        donation.get('unique_id', 'N/A'),
+                        donation.get('title', 'N/A'),
+                        donation.get('category', 'N/A'),
+                        donation.get('description', 'N/A'),
+                        donation.get('donor_name', 'N/A')
+                    ))
         
-        # Fetch donations if not provided
-        if donations is None:
-            donations_result = self.db.search_donations()
-            donations = donations_result.get('donations', [])
-        
-        # Check if donations list is empty
-        if not donations:
-            messagebox.showinfo("No Donations", "No donations found matching your search criteria.")
-            return
-        
-        # Populate treeview
-        for donation in donations:
-            self.donations_tree.insert('', 'end', values=(
-                donation.get('unique_id', ''),
-                donation.get('title', ''),
-                donation.get('category', ''),
-                donation.get('description', ''),
-                donation.get('status', '')
-            ))
+        except Exception as e:
+            print(f"Error refreshing donations: {e}")
+            messagebox.showerror("Error", f"Failed to refresh donations list: {e}")
 
     def copy_to_clipboard(self, text):
         """Copy text to clipboard and show feedback"""
@@ -254,6 +277,10 @@ class DonationListPage:
 
     def search_donations(self):
         """Search and filter donations based on user input"""
+        # Clear existing items in the treeview
+        for item in self.donations_tree.get_children():
+            self.donations_tree.delete(item)
+
         # Get search parameters
         search_term = self.search_var.get().strip()
         category = self.category_var.get()
@@ -268,7 +295,20 @@ class DonationListPage:
 
         # Refresh donations with search results
         donations = search_result.get('donations', [])
-        self.refresh_donations(donations)
+        
+        # If no donations found, show info message
+        if not donations:
+            messagebox.showinfo("No Results", "No donations found matching your search criteria.")
+        
+        # Add search results to treeview
+        for donation in donations:
+            self.donations_tree.insert('', 'end', values=(
+                donation.get('unique_id', 'N/A'),
+                donation.get('title', 'N/A'),
+                donation.get('category', 'N/A'),
+                donation.get('description', 'N/A'),
+                donation.get('donor_name', 'N/A')
+            ))
 
     def view_donation_details_btn(self):
         """
@@ -296,7 +336,7 @@ class DonationListPage:
         title = donation_details[1]
         category = donation_details[2]
         description = donation_details[3]
-        status = donation_details[4]
+        donor_name = donation_details[4]
         
         # Open donation details view
         try:
@@ -325,7 +365,25 @@ class DonationListPage:
             
             # Donation Image
             image_path = donation_result.get('image_path')
-            if image_path and os.path.exists(image_path):
+            image_data = donation_result.get('image_data')
+            image_type = donation_result.get('image_type')
+            
+            # Try to display image
+            if image_data:
+                try:
+                    # Convert image data to PIL Image
+                    image = Image.open(io.BytesIO(image_data))
+                    resized_image = image.resize((400, 400), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(resized_image)
+                    
+                    # Display image
+                    image_label = ttk.Label(left_frame, image=photo)
+                    image_label.image = photo  # Keep a reference
+                    image_label.pack(pady=20)
+                except Exception as img_err:
+                    print(f"Error loading image data: {img_err}")
+                    messagebox.showwarning("Image Error", "Could not load donation image.")
+            elif image_path and os.path.exists(image_path):
                 try:
                     original_image = Image.open(image_path)
                     resized_image = original_image.resize((400, 400), Image.LANCZOS)
@@ -345,10 +403,9 @@ class DonationListPage:
                 ("Category", category),
                 ("Condition", donation_result.get('condition', 'N/A')),
                 ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
-                ("Donor Name", donation_result.get('donor_name', 'N/A')),
+                ("Donor Name", donor_name),
                 ("Donation ID", unique_id),
                 ("Description", description),
-                ("Status", status),
                 ("Created At", str(donation_result.get('created_at', 'N/A'))),
                 ("Donor Email", donation_result.get('donor_email', 'N/A'))
             ]
@@ -460,7 +517,7 @@ class DonationListPage:
         title = donation_details[1]
         category = donation_details[2]
         description = donation_details[3]
-        status = donation_details[4]
+        donor_name = donation_details[4]
         
         # Open donation details view
         try:
@@ -489,7 +546,25 @@ class DonationListPage:
             
             # Donation Image
             image_path = donation_result.get('image_path')
-            if image_path and os.path.exists(image_path):
+            image_data = donation_result.get('image_data')
+            image_type = donation_result.get('image_type')
+            
+            # Try to display image
+            if image_data:
+                try:
+                    # Convert image data to PIL Image
+                    image = Image.open(io.BytesIO(image_data))
+                    resized_image = image.resize((400, 400), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(resized_image)
+                    
+                    # Display image
+                    image_label = ttk.Label(left_frame, image=photo)
+                    image_label.image = photo  # Keep a reference
+                    image_label.pack(pady=20)
+                except Exception as img_err:
+                    print(f"Error loading image data: {img_err}")
+                    messagebox.showwarning("Image Error", "Could not load donation image.")
+            elif image_path and os.path.exists(image_path):
                 try:
                     original_image = Image.open(image_path)
                     resized_image = original_image.resize((400, 400), Image.LANCZOS)
@@ -509,10 +584,9 @@ class DonationListPage:
                 ("Category", category),
                 ("Condition", donation_result.get('condition', 'N/A')),
                 ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
-                ("Donor Name", donation_result.get('donor_name', 'N/A')),
+                ("Donor Name", donor_name),
                 ("Donation ID", unique_id),
                 ("Description", description),
-                ("Status", status),
                 ("Created At", str(donation_result.get('created_at', 'N/A'))),
                 ("Donor Email", donation_result.get('donor_email', 'N/A'))
             ]
@@ -618,8 +692,7 @@ class DonationListPage:
             
             # Comprehensive donor information validation
             donor_email = donation.get('donor_email', '').strip()
-            donor_name = donation.get('donor_name', 'Unknown Donor').strip()
-            donor_phone = donation.get('donor_phone', '').strip()
+            donor_name = donation.get('donor_username', 'Unknown Donor').strip()
             
             # Detailed donor information availability check
             missing_info = []
@@ -627,11 +700,9 @@ class DonationListPage:
                 missing_info.append("Email")
             if not donor_name or donor_name == 'Unknown Donor':
                 missing_info.append("Name")
-            if not donor_phone:
-                missing_info.append("Phone")
             
             # If all contact information is missing, provide detailed error
-            if len(missing_info) == 3:
+            if len(missing_info) == 2:
                 messagebox.showerror(
                     "Contact Error", 
                     "Donor contact information is not available.\n\n"
@@ -652,19 +723,6 @@ class DonationListPage:
                 
                 if not proceed:
                     return
-            
-            # Check donation status
-            try:
-                status, status_message = self.db.get_donation_status(donation_id)
-                if status is None:
-                    print(f"Status retrieval failed: {status_message}")
-                    messagebox.showwarning("Status Check", "Could not verify donation status.")
-                elif status == 'withdrawn':
-                    messagebox.showinfo("Donation Unavailable", "This donation has been withdrawn.")
-                    return
-            except Exception as status_err:
-                print(f"Unexpected error checking donation status: {status_err}")
-                messagebox.showwarning("Status Check", "Unable to verify donation status.")
             
             # Open email composition dialog
             subject = f"Inquiry about Donation: {donation.get('title', 'Untitled Donation')}"
@@ -826,7 +884,7 @@ Best regards,
         title = donation_details[1]
         category = donation_details[2]
         description = donation_details[3]
-        status = donation_details[4]
+        donor_name = donation_details[4]
         
         # Open donation details view
         try:
@@ -855,7 +913,25 @@ Best regards,
             
             # Donation Image
             image_path = donation_result.get('image_path')
-            if image_path and os.path.exists(image_path):
+            image_data = donation_result.get('image_data')
+            image_type = donation_result.get('image_type')
+            
+            # Try to display image
+            if image_data:
+                try:
+                    # Convert image data to PIL Image
+                    image = Image.open(io.BytesIO(image_data))
+                    resized_image = image.resize((400, 400), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(resized_image)
+                    
+                    # Display image
+                    image_label = ttk.Label(left_frame, image=photo)
+                    image_label.image = photo  # Keep a reference
+                    image_label.pack(pady=20)
+                except Exception as img_err:
+                    print(f"Error loading image data: {img_err}")
+                    messagebox.showwarning("Image Error", "Could not load donation image.")
+            elif image_path and os.path.exists(image_path):
                 try:
                     original_image = Image.open(image_path)
                     resized_image = original_image.resize((400, 400), Image.LANCZOS)
@@ -875,10 +951,9 @@ Best regards,
                 ("Category", category),
                 ("Condition", donation_result.get('condition', 'N/A')),
                 ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
-                ("Donor Name", donation_result.get('donor_name', 'N/A')),
+                ("Donor Name", donor_name),
                 ("Donation ID", unique_id),
                 ("Description", description),
-                ("Status", status),
                 ("Created At", str(donation_result.get('created_at', 'N/A'))),
                 ("Donor Email", donation_result.get('donor_email', 'N/A'))
             ]
@@ -1000,7 +1075,7 @@ Best regards,
             
             # Get donor contact information
             donor_email = donation.get('donor_email')
-            donor_name = donation.get('donor_name')
+            donor_name = donation.get('donor_username')
             
             if not donor_email:
                 messagebox.showerror("Contact Error", "Donor contact information not available.")
@@ -1114,7 +1189,7 @@ Best regards,
             return
 
         # Get donor's email
-        donor_email = self.donations_tree.item(selected_item[0])['values'][7]
+        donor_email = self.donations_tree.item(selected_item[0])['values'][4]
 
         # Open email composition dialog
         email_window = tk.Toplevel(self.parent)
@@ -1233,23 +1308,12 @@ Best regards,
                 title = donation.get('title', 'Untitled')
                 category = donation.get('category', 'N/A')
                 description = donation.get('description', 'N/A')
-                status = donation.get('status', 'unknown')
                 
                 # Only add if status is available
-                if status.lower() == 'available':
+                if donation.get('status', '').lower() == 'available':
                     self.donations_tree.insert('', 'end', values=(
-                        title, category, description, status
-                    ), tags=(status,))
+                        title, category, description, donation.get('donor_name', 'N/A')
+                    ))
             
             except Exception as insert_err:
                 print(f"Error inserting donation: {insert_err}")
-        
-        # Configure tag colors
-        self.donations_tree.tag_configure('available', foreground='green')
-        self.donations_tree.tag_configure('pending', foreground='orange')
-        self.donations_tree.tag_configure('completed', foreground='blue')
-        self.donations_tree.tag_configure('withdrawn', foreground='red')
-        
-        # Update status label
-        donation_count = len(self.donations_tree.get_children())
-        self.status_label.config(text=f"Total Available Donations: {donation_count}")

@@ -253,3 +253,20 @@ CREATE TABLE donations (
 
 ## License
 MIT License - See LICENSE file for details
+
+## Project Outcomes
+
+### Secure Login and Registration
+- Users can securely log in and register, ensuring data protection and privacy.
+
+### Donation Listing
+- The system allows users to list items for donation, facilitating efficient resource sharing.
+
+### Recipient Search
+- Recipients can search for available donations, making it easier to find needed resources.
+
+### Email Notifications
+- Users receive email notifications for every significant action, keeping them informed and engaged.
+
+### User-Friendly UI
+- The user-friendly UI, built with Tkinter, provides easy navigation and enhances the overall user experience.

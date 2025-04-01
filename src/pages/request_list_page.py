@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from src.ui.modern_ui import ModernUI
-from src.constants import COLORS, CATEGORIES, LOCATIONS, STATES
+from src.constants import COLORS, CATEGORIES, STATES
 from src.database.database_handler import DatabaseHandler
 from src.utils.email_sender import send_email
 from src.utils.html_email_templates import HTMLEmailTemplates
@@ -96,20 +96,26 @@ class RequestListPage:
     def _create_requests_treeview(self):
         """Create treeview for displaying requests"""
         # Columns
-        columns = ('title', 'category', 'requester', 'status', 'date')
+        columns = ('unique_id', 'title', 'category', 'requester', 'status', 'date')
         
         # Treeview with scrollbar
         tree_frame = ttk.Frame(self.frame)
-        tree_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        tree_frame.pack(padx=10, pady=10, fill='both', expand=True)
         
+        # Scrollbar
+        tree_scroll = ttk.Scrollbar(tree_frame)
+        tree_scroll.pack(side='right', fill='y')
+        
+        # Treeview
         self.requests_tree = ttk.Treeview(
             tree_frame, 
             columns=columns, 
             show='headings', 
-            style='Treeview'
+            yscrollcommand=tree_scroll.set
         )
         
         # Define column headings
+        self.requests_tree.heading('unique_id', text='Unique ID', command=lambda: self.sort_column('unique_id', False))
         self.requests_tree.heading('title', text='Request Title', command=lambda: self.sort_column('title', False))
         self.requests_tree.heading('category', text='Category', command=lambda: self.sort_column('category', False))
         self.requests_tree.heading('requester', text='Requester', command=lambda: self.sort_column('requester', False))
@@ -117,25 +123,25 @@ class RequestListPage:
         self.requests_tree.heading('date', text='Date', command=lambda: self.sort_column('date', False))
         
         # Define column widths
+        self.requests_tree.column('unique_id', width=150, anchor='w')
         self.requests_tree.column('title', width=250, anchor='w')
         self.requests_tree.column('category', width=100, anchor='center')
         self.requests_tree.column('requester', width=150, anchor='w')
         self.requests_tree.column('status', width=100, anchor='center')
-        self.requests_tree.column('date', width=150, anchor='center')
+        self.requests_tree.column('date', width=100, anchor='center')
         
-        # Scrollbars
-        tree_scrollbar_y = ttk.Scrollbar(tree_frame, orient='vertical', command=self.requests_tree.yview)
-        tree_scrollbar_x = ttk.Scrollbar(tree_frame, orient='horizontal', command=self.requests_tree.xview)
-        self.requests_tree.configure(yscrollcommand=tree_scrollbar_y.set, xscrollcommand=tree_scrollbar_x.set)
+        # Configure scrollbar
+        tree_scroll.config(command=self.requests_tree.yview)
         
-        # Pack treeview and scrollbars
+        # Pack treeview
         self.requests_tree.pack(side='left', fill='both', expand=True)
-        tree_scrollbar_y.pack(side='right', fill='y')
-        tree_scrollbar_x.pack(side='bottom', fill='x')
+        
+        # Bind selection event
+        self.requests_tree.bind('<<TreeviewSelect>>', self.on_request_select)
         
         # Bind double-click event
-        self.requests_tree.bind('<Double-1>', self.view_request_details)
-    
+        self.requests_tree.bind('<Double-1>', self.on_request_double_click)
+
     def search_requests(self):
         """Search and filter requests based on user input"""
         search_term = self.search_var.get().lower()
@@ -159,14 +165,16 @@ class RequestListPage:
                 self.requests_tree.delete(item)
             
             # Populate treeview
-            for request in requests:
-                self.requests_tree.insert('', 'end', values=(
-                    request.get('request_message', 'N/A')[:50],  # Use request message as title
-                    request.get('donation_title', 'N/A'),  # Show donation title
-                    request.get('requester_name', 'Unknown'),
-                    request.get('status', 'Unknown').capitalize(), 
-                    request.get('created_at', 'N/A')
-                ))
+            if requests:
+                for request in requests:
+                    self.requests_tree.insert('', 'end', values=(
+                        request.get('unique_id', 'N/A'),  # Use unique_id as first value
+                        request.get('request_message', 'N/A')[:50],  # Use request message as title
+                        request.get('donation_title', 'N/A'),  # Show donation title
+                        request.get('requester_name', 'Unknown'),
+                        request.get('status', 'Unknown').capitalize(), 
+                        request.get('created_at', 'N/A')
+                    ))
         except Exception as e:
             messagebox.showerror("Search Error", str(e))
     
@@ -189,11 +197,12 @@ class RequestListPage:
         details_frame.pack(padx=20, pady=20, fill='both', expand=True)
         
         details = [
-            ("Title", request_details[0]),
-            ("Category", request_details[1]),
-            ("Requester", request_details[2]),
-            ("Status", request_details[3]),
-            ("Date", request_details[4])
+            ("Unique ID", request_details[0]),
+            ("Title", request_details[1]),
+            ("Category", request_details[2]),
+            ("Requester", request_details[3]),
+            ("Status", request_details[4]),
+            ("Date", request_details[5])
         ]
         
         for label, value in details:
@@ -234,6 +243,7 @@ class RequestListPage:
             if requests:
                 for request in requests:
                     self.requests_tree.insert('', 'end', values=(
+                        request.get('unique_id', 'N/A'),  # Use unique_id as first value
                         request.get('request_message', 'N/A')[:50],  # Use request message as title
                         request.get('donation_title', 'N/A'),  # Show donation title
                         request.get('requester_name', 'Unknown'),
@@ -271,12 +281,16 @@ class RequestListPage:
         
         try:
             # Get the request details
-            request_message = request_values[0]
-            request_details = self.db.get_request_details_by_message(request_message)
+            request_unique_id = request_values[0]
+            request_details = self.db.get_request_details_by_message(request_unique_id)
             
             if not request_details:
                 messagebox.showerror("Error", "Could not fetch request details.")
                 return
+            
+            # Print all keys for debugging
+            print("Request Details Keys:", request_details.keys())
+            print("Full Request Details:", request_details)
             
             # Create main container frame
             main_frame = tk.Frame(details_window)
@@ -293,10 +307,7 @@ class RequestListPage:
                     'title': 'Donation Information',
                     'details': [
                         ("Title", safe_get(request_details, 'donation_title')),
-                        ("Description", safe_get(request_details, 'donation_description')),
-                        ("Category", safe_get(request_details, 'donation_category')),
-                        ("Condition", safe_get(request_details, 'donation_condition')),
-                        ("Location", f"{safe_get(request_details, 'donation_city')}, {safe_get(request_details, 'donation_state')}")
+                        ("Description", safe_get(request_details, 'donation_description'))
                     ]
                 },
                 # Donor Details Section
@@ -311,10 +322,9 @@ class RequestListPage:
                 {
                     'title': 'Request Details',
                     'details': [
+                        ("Unique ID", safe_get(request_details, 'unique_id')),
                         ("Request Message", safe_get(request_details, 'request_message')),
-                        ("Status", safe_get(request_details, 'request_status')),
-                        ("Created At", safe_get(request_details, 'request_created_at')),
-                        ("Updated At", safe_get(request_details, 'request_updated_at'))
+                        ("Status", safe_get(request_details, 'status'))
                     ]
                 },
                 # Requester Details Section
@@ -329,12 +339,14 @@ class RequestListPage:
             
             # Create a canvas with scrollbar for better layout
             canvas = tk.Canvas(main_frame)
-            scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+            scrollbar = tk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
             scrollable_frame = tk.Frame(canvas)
             
             scrollable_frame.bind(
                 "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+                lambda e: canvas.configure(
+                    scrollregion=canvas.bbox("all")
+                )
             )
             
             canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
@@ -395,10 +407,10 @@ class RequestListPage:
         try:
             # Get the selected request's details
             selected_item = self.requests_tree.item(selected_items[0])
-            request_message = selected_item['values'][0]
+            request_unique_id = selected_item['values'][0]  # First value is now unique_id
             
-            # Get the request details to get the unique_id
-            request_details = self.db.get_request_details_by_message(request_message)
+            # Get the request details to confirm
+            request_details = self.db.get_request_details_by_message(request_unique_id)
             
             if not request_details:
                 messagebox.showerror("Error", "Could not find request details.")
@@ -407,18 +419,13 @@ class RequestListPage:
             # Debug information
             print(f"Request details keys: {request_details.keys()}")
             
-            # Check if we have the correct key for the unique_id
-            if 'request_unique_id' not in request_details:
-                messagebox.showerror("Error", "Request unique ID not found in details.")
-                return
-            
             # Process the donation request with user_id from session
             user_id = self.user_info.get('unique_id')
             if not user_id:
                 messagebox.showerror("Error", "User ID not found in session.")
                 return
                 
-            success, message = self.db.process_donation_request(request_details['request_unique_id'], 'accept', user_id)
+            success, message = self.db.process_donation_request(request_unique_id, 'accept', user_id)
             
             if success:
                 messagebox.showinfo("Success", message)
@@ -439,21 +446,13 @@ class RequestListPage:
         try:
             # Get the selected request's details
             selected_item = self.requests_tree.item(selected_items[0])
-            request_message = selected_item['values'][0]
+            request_unique_id = selected_item['values'][0]  # First value is now unique_id
             
-            # Get the request details to get the unique_id
-            request_details = self.db.get_request_details_by_message(request_message)
+            # Get the request details to confirm
+            request_details = self.db.get_request_details_by_message(request_unique_id)
             
             if not request_details:
                 messagebox.showerror("Error", "Could not find request details.")
-                return
-                
-            # Debug information
-            print(f"Request details keys: {request_details.keys()}")
-            
-            # Check if we have the correct key for the unique_id
-            if 'request_unique_id' not in request_details:
-                messagebox.showerror("Error", "Request unique ID not found in details.")
                 return
             
             # Process the donation request with user_id from session
@@ -461,8 +460,8 @@ class RequestListPage:
             if not user_id:
                 messagebox.showerror("Error", "User ID not found in session.")
                 return
-                
-            success, message = self.db.process_donation_request(request_details['request_unique_id'], 'reject', user_id)
+            
+            success, message = self.db.process_donation_request(request_unique_id, 'reject', user_id)
             
             if success:
                 messagebox.showinfo("Success", message)
@@ -472,3 +471,71 @@ class RequestListPage:
         
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
+
+    def on_request_double_click(self, event):
+        """Handle double-click event on a request"""
+        selected_item = self.requests_tree.selection()
+        if not selected_item:
+            return
+        
+        # Get request details
+        request_details = self.requests_tree.item(selected_item)['values']
+        
+        # Show details in a popup
+        details_window = tk.Toplevel(self.frame)
+        details_window.title("Request Details")
+        details_window.geometry("500x400")
+        
+        # Details display
+        details_frame = ttk.Frame(details_window)
+        details_frame.pack(padx=20, pady=20, fill='both', expand=True)
+        
+        details = [
+            ("Unique ID", request_details[0]),
+            ("Title", request_details[1]),
+            ("Category", request_details[2]),
+            ("Requester", request_details[3]),
+            ("Status", request_details[4]),
+            ("Date", request_details[5])
+        ]
+        
+        # Display details
+        for label, value in details:
+            row_frame = ttk.Frame(details_frame)
+            row_frame.pack(fill='x', pady=5)
+            
+            ttk.Label(row_frame, text=f"{label}:", style='Subtitle.TLabel', width=15).pack(side='left')
+            ttk.Label(row_frame, text=str(value), style='Subtitle.TLabel').pack(side='left')
+        
+        # Fetch full request details
+        try:
+            full_request_details = self.db.get_request_details_by_message(request_details[1])
+            
+            # Additional details section
+            ttk.Label(details_frame, text="Additional Details", style='Title.TLabel').pack(pady=(20, 10))
+            
+            additional_details = [
+                ("Donation Title", full_request_details.get('donation_title', 'N/A')),
+                ("Donation Description", full_request_details.get('donation_description', 'N/A')),
+                ("Donor Name", full_request_details.get('donor_name', 'N/A')),
+                ("Request Message", full_request_details.get('request_message', 'N/A'))
+            ]
+            
+            for label, value in additional_details:
+                row_frame = ttk.Frame(details_frame)
+                row_frame.pack(fill='x', pady=5)
+                
+                ttk.Label(row_frame, text=f"{label}:", style='Subtitle.TLabel', width=20).pack(side='left')
+                ttk.Label(row_frame, text=str(value), style='Subtitle.TLabel', wraplength=300).pack(side='left')
+        
+        except Exception as e:
+            messagebox.showwarning("Details Retrieval", f"Could not fetch full details: {str(e)}")
+        
+        # Close button
+        close_btn = ModernUI.create_button(
+            details_frame,
+            "Close",
+            details_window.destroy,
+            style='Secondary.TButton'
+        )
+        close_btn.pack(pady=(20, 0))

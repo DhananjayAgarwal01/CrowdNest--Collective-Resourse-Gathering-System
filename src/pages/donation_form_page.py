@@ -227,7 +227,7 @@ class DonationFormPage(ttk.Frame):
                 for widget in self.preview_frame.winfo_children():
                     widget.destroy()
                 # Redirect to dashboard
-                self.show_frame('dashboard')
+                self.show_frame('DashboardPage')
 
         except Exception as e:
             messagebox.showerror("Unexpected Error", f"An error occurred: {str(e)}")
