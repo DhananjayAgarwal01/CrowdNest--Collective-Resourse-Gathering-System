@@ -201,14 +201,7 @@ class DonationListPage:
         
         # Check if donations list is empty
         if not donations:
-            # Insert a "No Donations" row instead of showing a popup
-            self.donations_tree.insert('', 'end', values=(
-                'N/A', 
-                'No Donations Available', 
-                'N/A', 
-                'There are currently no donations matching your search criteria.', 
-                'N/A'
-            ))
+            messagebox.showinfo("No Donations", "No donations found matching your search criteria.")
             return
         
         # Populate treeview
@@ -310,11 +303,6 @@ class DonationListPage:
             # Fetch specific donation details
             donation_result = self.db.get_donation_details(unique_id)
             
-            # Handle case where donation_result might be a string or None
-            if isinstance(donation_result, str):
-                messagebox.showerror("Error", donation_result)
-                return
-            
             if not donation_result:
                 messagebox.showerror("Error", f"Could not find details for donation: {title}")
                 return
@@ -351,21 +339,13 @@ class DonationListPage:
                     print(f"Error loading image: {img_err}")
                     messagebox.showwarning("Image Error", "Could not load donation image.")
             
-            # Determine donor name (prioritize username)
-            donor_name = (
-                donation_result.get('username') or 
-                donation_result.get('donor_name') or 
-                donation_result.get('name') or 
-                'Anonymous'
-            )
-            
             # Donation Details
             details = [
                 ("Title", title),
                 ("Category", category),
                 ("Condition", donation_result.get('condition', 'N/A')),
                 ("Location", f"{donation_result.get('city', 'N/A')}, {donation_result.get('state', 'N/A')}"),
-                ("Donor Name", donor_name),
+                ("Donor Name", donation_result.get('donor_name', 'N/A')),
                 ("Donation ID", unique_id),
                 ("Description", description),
                 ("Status", status),
@@ -694,7 +674,10 @@ I am interested in the donation: {donation.get('title', 'Untitled Donation')}.
 Category: {donation.get('category', 'N/A')}
 Condition: {donation.get('condition', 'N/A')}
 
-Could you provide more information about this donation?"""
+Could you provide more information about this donation?
+
+Best regards,
+{self.user_info.get('name', 'Potential Recipient')}"""
             
             # Use simpledialog to allow user to edit message
             message = simpledialog.askstring(

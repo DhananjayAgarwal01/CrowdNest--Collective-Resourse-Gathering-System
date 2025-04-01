@@ -77,10 +77,7 @@ class NavigationPane:
     
     def perform_logout(self):
         """Perform logout"""
-        if self.logout_callback:
-            self.logout_callback()
-        else:
-            messagebox.showinfo("Info", "Logout feature not available")
+        self.logout_callback()
     
     def pack(self, **kwargs):
         self.frame.pack(**kwargs)

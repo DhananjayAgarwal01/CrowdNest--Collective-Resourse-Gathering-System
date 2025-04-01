@@ -59,6 +59,7 @@ class CrowdNestApp:
 
         # Create navigation pane
         self.nav_pane = NavigationPane(root, self.show_frame)
+        self.nav_pane.logout_callback = self.logout  # Set the logout callback
         self.nav_pane.pack(side='left', fill='y')
         
         # Dictionary to map frame classes
@@ -209,6 +210,41 @@ class CrowdNestApp:
             messagebox.showerror("Error", f"Error submitting donation: {str(e)}")
             return False
 
+    def logout(self):
+        """Handle user logout"""
+        try:
+            # Clear user data
+            self.current_user = None
+            self.user_info = None
+            
+            # Clear all frames
+            for name, frame in self.frames.items():
+                if hasattr(frame, 'frame'):
+                    frame.frame.pack_forget()
+            
+            # Show login page
+            self.show_frame('LoginPage')
+            
+            # Show logout confirmation
+            messagebox.showinfo("Logged Out", "You have been successfully logged out.")
+            
+            # Reset frames to initial state
+            self.frames = {name: frame for name, frame in self.frames.items()
+                          if name in ['LoginPage', 'RegisterPage']}
+            
+            # Hide navigation pane before showing login page
+            if hasattr(self, 'nav_pane'):
+                self.nav_pane.pack_forget()
+            
+            # Show login page
+            self.show_frame('LoginPage')
+            
+            messagebox.showinfo("Logout", "You have been logged out successfully!")
+            
+        except Exception as e:
+            print(f"Error in logout: {e}")
+            messagebox.showerror("Logout Error", "An error occurred during logout")
+    
     def login_success(self, user_info):
         """Handle successful login"""
         try:

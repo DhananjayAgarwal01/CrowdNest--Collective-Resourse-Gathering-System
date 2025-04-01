@@ -8,6 +8,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from src.database.database_handler import DatabaseHandler
+from src.utils.email_sender import send_email
 
 class AcceptedRequestsPage:
     def __init__(self, parent, controller, user_data):
@@ -108,24 +109,40 @@ class AcceptedRequestsPage:
         try:
             # Fetch accepted requests
             self.db = DatabaseHandler()
-            accepted_requests = self.db.search_requests(status='approved')
+            # Get requests that are approved and associated with the current user
+            accepted_requests = self.db.search_requests(
+                status='approved',
+                donor_id=self.user_id
+            )
+            
+            if not accepted_requests:
+                # Show a message if no requests are found
+                self.requests_tree.insert('', 'end', values=(
+                    'No requests', '', '', '', ''
+                ))
+                return
             
             # Populate treeview
             for request in accepted_requests:
-                # Add a 'Delivered' button for each request
+                # Format the date
+                created_at = request.get('created_at', 'N/A')
+                if isinstance(created_at, str):
+                    created_at = created_at.split('.')[0]  # Remove microseconds
+                
+                # Add request to treeview
                 self.requests_tree.insert('', 'end', values=(
-                    request.get('unique_id', 'N/A')[:8],  # Truncate request ID
+                    request.get('unique_id', 'N/A'),
                     request.get('donation_title', 'N/A'),
                     request.get('requester_name', 'Unknown'),
-                    request.get('created_at', 'N/A'),
+                    created_at,
                     'Mark Delivered'
-                ), tags=('request_row',)
-                )
+                ), tags=('request_row',))
             
             # Configure tag for row actions
             self.requests_tree.tag_bind('request_row', '<Button-1>', self.on_row_click)
         
         except Exception as e:
+            print(f"Error refreshing accepted requests: {e}")
             messagebox.showerror("Error", f"Failed to load accepted requests: {str(e)}")
     
     def on_row_click(self, event):
@@ -338,6 +355,24 @@ class AcceptedRequestsPage:
             success = db_handler.mark_request_delivered(request_id)
             
             if success:
+                # Get request details for email notifications
+                request_details = db_handler.get_request_details_by_message(request_id)
+                
+                if request_details:
+                    # Send email to requester
+                    send_email(
+                        to_email=request_details['requester_email'],
+                        subject="Your Donation Request Has Been Delivered",
+                        body=f"Dear {request_details['requester_username']},\n\nYour request for '{request_details['donation_title']}' has been marked as delivered. Thank you for using CrowdNest!"
+                    )
+                    
+                    # Send email to donor
+                    send_email(
+                        to_email=request_details['donor_email'],
+                        subject="Donation Request Marked as Delivered",
+                        body=f"Dear {request_details['donor_name']},\n\nYou have successfully delivered '{request_details['donation_title']}' to {request_details['requester_username']}. Thank you for your generosity!"
+                    )
+                
                 # Remove the item from the treeview
                 self.requests_tree.delete(selected_item[0])
                 

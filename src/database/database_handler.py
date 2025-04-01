@@ -946,8 +946,61 @@ class DatabaseHandler:
             """
             self.cursor.execute(update_total_requests_query, (user_id,))
             
-            # Verify the update
-            self.cursor.execute("SELECT total_requests FROM users WHERE unique_id = %s", (user_id,))
+         # Verify the update
+            self.cursor.execute("SELECT total_requests, email FROM users WHERE unique_id = %s", (user_id,))
+            user_data = self.cursor.fetchone()
+            
+            # Send email notification to requester
+            if user_data and user_data['email']:
+                # Prepare email content
+                email_subject = f"Donation Request Created - {title}"
+                email_body = f"""Dear User,
+
+Your donation request has been successfully created.
+
+Request Details:
+Title: {title}
+Category: {category}
+Condition: {condition}
+Location: {city}, {state}
+Urgency: {urgency}
+Status: {status}
+
+We will notify you when donors respond to your request.
+
+Best regards,
+CrowdNest Team"""
+                
+                # Send email to requester
+                from src.utils.email_sender import send_email
+                email_result = send_email(
+                    to_email=user_data['email'],
+                    subject=email_subject,
+                    body=email_body
+                )
+                
+                # Send notification to admin
+                admin_subject = "New Donation Request Created"
+                admin_body = f"""A new donation request has been created.
+
+Request Details:
+Requester ID: {user_id}
+Title: {title}
+Category: {category}
+Condition: {condition}
+Location: {city}, {state}
+Urgency: {urgency}
+Status: {status}
+
+Please review the request."""
+                
+                admin_email = os.getenv('SMTP_EMAIL')
+                if admin_email:
+                    send_email(
+                        to_email=admin_email,
+                        subject=admin_subject,
+                        body=admin_body
+                    )
             updated_total_requests = self.cursor.fetchone()['total_requests']
             
             # Debug print
@@ -1502,7 +1555,7 @@ class DatabaseHandler:
                 d.`condition`, 
                 d.state,
                 d.city,
-                d.image_path, 
+                d.image_data,
                 d.image_type,
                 d.status,
                 d.created_at, 
@@ -1537,7 +1590,7 @@ class DatabaseHandler:
                 'condition': donation['condition'],
                 'state': donation['state'],
                 'city': donation['city'],
-                'image_path': donation['image_path'],
+                'image_data': donation['image_data'],
                 'image_type': donation['image_type'],
                 'status': donation['status'],
                 'created_at': donation['created_at'],

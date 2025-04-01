@@ -16,15 +16,6 @@ COLORS = {
     'border': '#DEE2E6'          # Subtle Border Gray
 }
 
-# Locations
-LOCATIONS = [
-    "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune",
-    "Ahmedabad", "Jaipur", "Surat", "Lucknow", "Kanpur", "Nagpur", "Indore",
-    "Thane", "Bhopal", "Visakhapatnam", "Vadodara", "Ghaziabad", "Ludhiana",
-    "Patna", "Agra", "Nashik", "Faridabad", "Meerut", "Rajkot", "Varanasi",
-    "Srinagar", "Aurangabad", "Dhanbad"
-]
-
 # Item conditions
 CONDITIONS = [
     "New", "Like New", "Very Good", "Good", "Acceptable"
