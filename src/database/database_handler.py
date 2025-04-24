@@ -429,6 +429,59 @@ class DatabaseHandler:
         """
         return self.get_request_details_by_message(request_id)
 
+    def create_donation_request(self, user_id, title, description, category, condition, state, city, urgency, donation_id=None):
+        """
+        Create a new donation request and send email notifications
+        
+        :param user_id: ID of the requester
+        :param title: Title of the request
+        :param description: Description of the request
+        :param category: Category of the requested item
+        :param condition: Condition of the requested item
+        :param state: State location
+        :param city: City location
+        :param urgency: Urgency level of the request
+        :param donation_id: Optional ID of an existing donation
+        :return: Tuple (success, message, request_id)
+        """
+        try:
+            # Generate unique ID for the request
+            request_id = str(uuid.uuid4())
+            
+            # Begin transaction
+            self.connection.start_transaction()
+            
+            # Create the request
+            query = """
+            INSERT INTO donation_requests 
+            (unique_id, requester_id, donation_id, request_message, status, created_at)
+            VALUES (%s, %s, %s, %s, 'pending', NOW())
+            """
+            
+            self.cursor.execute(query, (
+                request_id,
+                user_id,
+                donation_id,
+                description
+            ))
+            
+            # Commit transaction
+            self.connection.commit()
+            
+            return True, "Request created successfully", request_id
+            
+        except mysql.connector.Error as e:
+            self.connection.rollback()
+            error_message = f"Database error creating request: {e}"
+            print(error_message)
+            return False, error_message, None
+            
+        except Exception as e:
+            self.connection.rollback()
+            error_message = f"Unexpected error creating request: {e}"
+            print(error_message)
+            return False, error_message, None
+    
     def get_user_donation_requests(self, user_id):
         """
         Retrieve all donation requests for a specific user
@@ -563,18 +616,34 @@ class DatabaseHandler:
             
             # Send email notification
             try:
-                email_notifier = EmailNotification()
-                email_notifier.send_status_notification(
-                    recipient_email=request_details['requester_email'], 
-                    status=new_status.lower(), 
+                from src.utils.email_sender import send_email
+                from src.utils.html_email_templates import HTMLEmailTemplates
+                
+                # Create email subject
+                email_subject = f"Your donation request status has been updated: {new_status.capitalize()}"
+                
+                # Use HTML template for status update
+                email_body = HTMLEmailTemplates.generate_request_status_email(
+                    status=new_status.lower(),
                     request_details={
                         'donation_title': request_details['donation_title'],
                         'requester_username': request_details['requester_id'],
                         'request_message': request_details['request_message']
                     }
                 )
+                
+                # Send email with HTML template
+                send_email(
+                    to_email=request_details['requester_email'],
+                    subject=email_subject,
+                    body=email_body
+                )
+                
+                print(f"Email notification sent to {request_details['requester_email']} for status update to {new_status}")
             except Exception as email_error:
                 print(f"Warning: Failed to send email notification: {email_error}")
+                import traceback
+                traceback.print_exc()
             
             print(f"Successfully updated request {request_id} to status {new_status}")
             return True
@@ -1788,18 +1857,30 @@ Please review the request."""
                     
                     # Send email notification
                     try:
-                        email_notifier = EmailNotification()
-                        email_notifier.send_status_notification(
-                            recipient_email=request_info['requester_email'], 
-                            status='approved', 
-                            request_details={
-                                'donation_title': request_info['donation_title'],
-                                'requester_username': request_info['requester_username'],
-                                'request_message': request_info['request_message']
-                            }
+                        from src.utils.email_sender import send_email
+                        from src.utils.html_email_templates import HTMLEmailTemplates
+                        
+                        # Create email subject
+                        email_subject = f"Your request for {request_info['donation_title']} has been accepted"
+                        
+                        # Use HTML template for accepted request
+                        email_body = HTMLEmailTemplates.generate_request_status_email(
+                            status='approved',
+                            request_details=request_info
                         )
+                        
+                        # Send email with HTML template
+                        send_email(
+                            to_email=request_info['requester_email'],
+                            subject=email_subject,
+                            body=email_body
+                        )
+                        
+                        print(f"Email notification sent to {request_info['requester_email']} for approval")
                     except Exception as email_error:
                         print(f"Warning: Failed to send email notification: {email_error}")
+                        import traceback
+                        traceback.print_exc()
                     
                     # Commit transaction
                     self.connection.commit()
@@ -1844,18 +1925,30 @@ Please review the request."""
                     
                     # Send email notification
                     try:
-                        email_notifier = EmailNotification()
-                        email_notifier.send_status_notification(
-                            recipient_email=request_info['requester_email'], 
-                            status='rejected', 
-                            request_details={
-                                'donation_title': request_info['donation_title'],
-                                'requester_username': request_info['requester_username'],
-                                'request_message': request_info['request_message']
-                            }
+                        from src.utils.email_sender import send_email
+                        from src.utils.html_email_templates import HTMLEmailTemplates
+                        
+                        # Create email subject
+                        email_subject = f"Your request for {request_info['donation_title']} has been declined"
+                        
+                        # Use HTML template for rejected request
+                        email_body = HTMLEmailTemplates.generate_request_status_email(
+                            status='rejected',
+                            request_details=request_info
                         )
+                        
+                        # Send email with HTML template
+                        send_email(
+                            to_email=request_info['requester_email'],
+                            subject=email_subject,
+                            body=email_body
+                        )
+                        
+                        print(f"Email notification sent to {request_info['requester_email']} for rejection")
                     except Exception as email_error:
                         print(f"Warning: Failed to send email notification: {email_error}")
+                        import traceback
+                        traceback.print_exc()
                     
                     # Commit transaction
                     self.connection.commit()
