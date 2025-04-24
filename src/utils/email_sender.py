@@ -23,8 +23,16 @@ def send_email(to_email, subject, body, from_name='CrowdNest', from_email=None):
         smtp_password = os.getenv('SMTP_PASSWORD')
         
         # Validate SMTP configuration
-        if not all([smtp_server, smtp_port, smtp_username, smtp_password]):
-            print("SMTP configuration is incomplete")
+        missing_configs = []
+        if not smtp_server:
+            missing_configs.append('SMTP_SERVER')
+        if not smtp_username:
+            missing_configs.append('SMTP_EMAIL')
+        if not smtp_password:
+            missing_configs.append('SMTP_PASSWORD')
+            
+        if missing_configs:
+            print(f"Missing SMTP configuration: {', '.join(missing_configs)}")
             return False
         
         # Use default from_email if not provided
@@ -46,14 +54,26 @@ def send_email(to_email, subject, body, from_name='CrowdNest', from_email=None):
         # Attach HTML content
         msg.attach(MIMEText(html_content, 'html'))
         
-        # Send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.send_message(msg)
-        
-        print(f"Email sent successfully to {to_email}")
-        return True
+        # Send email with enhanced error handling
+        try:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                server.starttls()
+                try:
+                    server.login(smtp_username, smtp_password)
+                except smtplib.SMTPAuthenticationError:
+                    print("SMTP authentication failed - check username and password")
+                    return False
+                
+                try:
+                    server.send_message(msg)
+                    print(f"Email sent successfully to {to_email}")
+                    return True
+                except smtplib.SMTPRecipientsRefused:
+                    print(f"Invalid recipient email address: {to_email}")
+                    return False
+        except smtplib.SMTPConnectError:
+            print(f"Failed to connect to SMTP server: {smtp_server}:{smtp_port}")
+            return False
     
     except smtplib.SMTPException as smtp_err:
         print(f"SMTP Error sending email: {smtp_err}")
